@@ -46,5 +46,6 @@ def sys_init():
     snapshot_core_db(curd=curd_core)
     refresh_field_param_to_core(curd=curd_core)
 
+
 if __name__ == '__main__':
     sys_init()

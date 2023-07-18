@@ -31,13 +31,14 @@ DB_PORT_TEST = 3306
 DB_TYPE = 'mysql'
 DB_CHARSET = 'utf8'
 
-PATH_SNAPSHOT = os.path.join('.', 'core', 'snapshots')
+PATH_ROOT = os.path.dirname(__file__)
+PATH_ADMIN_INI = os.path.join(PATH_ROOT, 'admin.ini')
+PATH_SNAPSHOT = os.path.join(PATH_ROOT, 'core', 'snapshots')
 PATH_FIELD_PARAM_SNAPSHOT = os.path.join(PATH_SNAPSHOT, 'field_param')
 PATH_META_SNAPSHOT = os.path.join(PATH_SNAPSHOT, 'meta')
 PATH_MODEL_SNAPSHOT = os.path.join(PATH_SNAPSHOT, 'models')
 PATH_DB_SNAPSHOT = os.path.join(PATH_SNAPSHOT, 'db')
-PATH_ROOT = os.path.dirname(__file__)
-PATH_ADMIN_INI = os.path.join(PATH_ROOT, 'admin.ini')
+
 CONF.read(PATH_ADMIN_INI)
 
 sys_mode = str.lower(SYS_MODE)
@@ -68,3 +69,5 @@ DB_SCHEMA_CORE = 'mint_core'
 DB_URL_BASE = f'{DB_TYPE}://{DB_USERNAME}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/?charset={DB_CHARSET}'
 DB_URL = f'{DB_TYPE}://{DB_USERNAME}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_SCHEMA}?charset={DB_CHARSET}'
 DB_URL_CORE = f'{DB_TYPE}://{DB_USERNAME}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_SCHEMA_CORE}?charset={DB_CHARSET}'
+
+FIELD_PARAM_FILE_NAME = 'seed.xlsx'

@@ -6,7 +6,7 @@ import pandas as pd
 from pandas import ExcelWriter
 from openpyxl import Workbook
 
-from helper_function.string import to_json_str
+from helper_function.hf_string import to_json_str
 from helper_function.excel import fit_col_width
 from helper_function.func import *
 from core.meta_objs import get_table_objs, JsonObj
@@ -50,10 +50,20 @@ class Tree(JsonObj):
             self.reading_sequence = tree.reading_sequence
             return
 
+        if not root:
+            print('root missing')
+            raise ValueError
+
+        if len(cst_pki) == 0:
+            print(f'missing cols constraint and primary info. tree: {root} ')
+            raise ValueError
+
+        if not tables:
+            print(f'missing table obj. tree: {root} ')
+            raise ValueError
+
         self.root = root
         self.cst_pki = copy(cst_pki)
-        if not tables:
-            tables = get_table_objs()
         self.ref = ref
         self.reffed = reffed
 
@@ -342,35 +352,26 @@ class DataTree(Tree):
 
     @staticmethod
     def update_values_map(values_map, tree, root_data):
-        for p in tree.parents:
+        def update_values_map_sub(sub_tree, from_key, to_key):
             if len(root_data) == 0:
                 adding_data = set()
             else:
-                adding_data = set(root_data[p.ref].dropna())
+                adding_data = set(root_data[from_key].dropna())
             try:
-                values_map[p.root][p.reffed]['values'] = \
-                    values_map[p.root][p.reffed]['values'] | adding_data
+                values_map[sub_tree.root][to_key]['values'] = \
+                    values_map[sub_tree.root][to_key]['values'] | adding_data
             except KeyError:
-                values_map[p.root] = {}
-                values_map[p.root][p.reffed] = {
-                    'tree': p,
+                values_map[sub_tree.root] = {}
+                values_map[sub_tree.root][to_key] = {
+                    'tree': sub_tree,
                     'values': adding_data
                 }
 
+        for p in tree.parents:
+            update_values_map_sub(sub_tree=p, from_key=p.ref, to_key=p.reffed)
+
         for c in tree.children:
-            if len(root_data) == 0:
-                adding_data = set()
-            else:
-                adding_data = set(root_data[c.reffed].dropna())
-            try:
-                values_map[c.root][c.ref]['values'] = \
-                    values_map[c.root][c.ref]['values'] | adding_data
-            except KeyError:
-                values_map[c.root] = {}
-                values_map[c.root][c.ref] = {
-                    'tree': c,
-                    'values': adding_data
-                }
+            update_values_map_sub(sub_tree=c, from_key=c.reffed, to_key=c.ref)
 
         return values_map
 
@@ -670,7 +671,7 @@ class Test:
     from sys_init import DB_URL
     curd = CURD(url=DB_URL)
     cst_pki = curd.get_cst_pki()
-    tables = get_table_objs()
+    tables = get_table_objs(curd=curd)
     t = Tree(root='project', cst_pki=cst_pki, tables=tables)
     dt = DataTree(tree=t)
 

@@ -5,10 +5,14 @@ from datetime import datetime as dt
 
 import pandas as pd
 import numpy as np
-from buffer.number_process import *
+from helper_function.number import *
 import json
 from typing import Generator
 from sqlalchemy import Integer, BINARY, CHAR, Column, Date, DateTime, Float, String, Table, Text
+
+
+def dash_to_capitalized(s):
+    return ''.join([str.upper(part[0]) + part[1:]  for part in s.split('_')])
 
 
 def tag_replace(s, left_brace='{', right_brace='}', **kwargs):
