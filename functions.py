@@ -9,8 +9,33 @@ from sys_init import *
 
 from table_objs import *
 from meta import get_table_objs
-from tree import DataTree, Tree, get_cst_pki
+from tree import DataTree, Tree, get_cst_pki, get_booking_sequence
 from xltemplate import render_booking_xl_sheet
+
+from typing import Literal
+
+
+def migrate_from_xl_folder(
+        folder,
+        if_exists: Literal["fail", "replace", "append"] = "append"
+):
+    def migration_pandas(data_path):
+        table_name = os.path.basename(data_path)
+        try:
+            data = pd.read_excel(data_path, index_col=False)
+            print(data)
+            data.to_sql(
+                name=table_name,
+                con=DB_ENGINE,
+                schema=DB_SCHEMA,
+                if_exists=if_exists,
+                index=False
+            )
+        except FileNotFoundError:
+            print(f'table: {table_name} xlsx file not exist')
+
+    booking_seq = get_booking_sequence()
+
 
 
 def get_booking_table_names():

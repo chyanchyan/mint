@@ -62,7 +62,7 @@ PATH_DB_SNAPSHOT = os.path.join(PATH_SNAPSHOT, 'db')
 ADMIN = configparser.ConfigParser()
 CONF = configparser.ConfigParser()
 ADMIN.read(PATH_ADMIN_INI)
-CONF.read(PATH_ADMIN_INI)
+CONF.read(PATH_CONFIG_INI)
 
 OS_TYPE = str.lower(platform.system())
 PROJECT_NAME = CONF.get('SYS', 'project_name')

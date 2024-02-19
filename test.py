@@ -1,9 +1,12 @@
-import pandas as pd
+from helper_function.hf_data import *
 
-# 创建两个DataFrame
-df1 = pd.DataFrame({'A': [1, 2, 3], 'B': [4, 5, 6]})
-df2 = pd.DataFrame({'A': [None, 8, None], 'B': [None, None, 12]})
+from functions import get_cst_pki
+# 假设表格数据如下，这里使用列表表示
+relation_table = get_cst_pki()[['TABLE_NAME', 'REFERENCED_TABLE_NAME']].values.tolist()
 
-# 使用combine_first方法
-result = df1.combine_first(df2)
-print(result)
+graph = get_graph(relation_table=relation_table)
+# for item in get_related_nodes(graph=graph, node='project'):
+#     print(item)
+
+for item in topological_sort(relation_table=relation_table):
+    print(item)

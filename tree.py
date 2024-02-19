@@ -7,13 +7,14 @@ import numpy as np
 from pandas import ExcelWriter
 from openpyxl import Workbook
 
-from helper_function.string_process import to_json_str
-from helper_function.data_process import fit_col_width
-from helper_function.func_process import *
-from helper_function.array_process import get_crop_from_df
-from meta_objs import get_table_objs, JsonObj
+from helper_function.hf_string import to_json_str
+from helper_function.hf_xl import fit_col_width
+from helper_function.hf_func import *
+from helper_function.hf_array import get_crop_from_df
+from helper_function.hf_data import *
+from table_objs import JsonObj
+from meta import get_table_objs
 
-from core.sqlalchemy_curd import CURD
 from sys_init import DB_SCHEMA, DB_ENGINE
 
 
@@ -26,62 +27,34 @@ def get_cst_pki():
     return res
 
 
-def get_booking_sequence(cst_pki):
-    cst_pki = cst_pki[
-        (cst_pki['CONSTRAINT_NAME'] != 'PRIMARY') &
-        (~pd.isna(cst_pki['REFERENCED_TABLE_NAME']))
-        ]
-    node_names = set(cst_pki['TABLE_NAME'].to_list())
+def get_booking_sequence(root_nodes=None):
+    cst_pki = get_cst_pki()
+    relation_table = cst_pki[['TABLE_NAME', 'REFERENCED_TABLE_NAME']].values.tolist()
+    booking_seq = topological_sort(relation_table=relation_table)
+    for item in booking_seq:
+        print(item)
+    if root_nodes is not None:
+        related_tables = set()
+        graph = get_graph(relation_table=relation_table)
+        for node in root_nodes:
+            r = get_related_nodes(
+                graph=graph,
+                node=node
+            )
+            related_tables |= set(r)
 
-    booking_seq = []
-    while len(cst_pki) > 0:
-        ref_tables = set(cst_pki['TABLE_NAME'].to_list())
-        reffed_tables = set(cst_pki['REFERENCED_TABLE_NAME'].to_list())
-
-        booking_seq.extend(sorted(list(reffed_tables - ref_tables)))
-
-        cst_pki = cst_pki[~cst_pki['REFERENCED_TABLE_NAME'].isin(booking_seq)]
-
-    booking_seq = booking_seq + list(node_names - set(booking_seq))
+        booking_seq = sorted(list(set(booking_seq) & related_tables), key=lambda x: booking_seq.index(x))
 
     return booking_seq
 
 
-def get_reading_sequence(root, cst_pki):
-    cst_pki = cst_pki[
-        (cst_pki['CONSTRAINT_NAME'] != 'PRIMARY') &
-        (~pd.isna(cst_pki['REFERENCED_TABLE_NAME']))
-        ]
-
-    reading_seq = [root]
-
-    c_cst_pki = cst_pki.copy()
-    while True:
-        cs = set(c_cst_pki[c_cst_pki['REFERENCED_TABLE_NAME'].isin(reading_seq)]['TABLE_NAME'].values) - set(
-            reading_seq)
-        c_cst_pki = c_cst_pki[~c_cst_pki['TABLE_NAME'].isin(reading_seq)]
-
-        if len(cs) == 0:
-            break
-        reading_seq.extend(list(cs))
-
-    p_cst_pki = cst_pki.copy()
-    while True:
-        ps = set(p_cst_pki[p_cst_pki['TABLE_NAME'].isin(reading_seq)]['REFERENCED_TABLE_NAME'].values) - set(
-            reading_seq)
-        p_cst_pki = p_cst_pki[~p_cst_pki['REFERENCED_TABLE_NAME'].isin(reading_seq)]
-
-        if len(ps) == 0:
-            break
-
-        reading_seq.extend(list(ps))
-
-    return reading_seq
+def get_reading_sequence(root_nodes=None):
+    return list(reversed(get_booking_sequence(root_nodes=root_nodes)))
 
 
 CST_PKI = get_cst_pki()
 TABLES = get_table_objs()
-BOOKING_SEQUENCE = get_booking_sequence(cst_pki=CST_PKI)
+BOOKING_SEQUENCE = get_booking_sequence()
 
 
 class Tree(JsonObj):
@@ -986,141 +959,5 @@ class DataTree(Tree):
         wb.save(pth)
 
 
-class Test:
-    def __init__(self):
-        from sys_init import DB_ENGINE
-        self.curd = CURD(engine=DB_ENGINE)
-        self.cst_pki = CST_PKI
-        self.tables = get_table_objs()
-        self.t = Tree(root='project', cst_pki=self.cst_pki, tables=self.tables)
-        self.dt = DataTree(tree=self.t)
-
-    # @print_output
-    @timecost(30)
-    def tree(self):
-        return Tree(root='project', cst_pki=self.cst_pki, tables=self.tables)
-
-    # @print_output
-    @timecost(10)
-    def tree_json_obj(self):
-        jo = self.t.json_obj
-        return to_json_str(jo)
-
-    # @print_output
-    @timecost(10)
-    def tree_p(self):
-        p = self.t.p['bd']
-        return to_json_str(p.json_obj)
-
-    # @print_output
-    @timecost(10)
-    def tree_c(self):
-        p = self.t.c['project_inst']
-        return to_json_str(p.json_obj)
-
-    # @print_output
-    @timecost(10)
-    def tree_get_node_names(self):
-        return self.t.get_node_names()
-
-    def tree_get_parent_tree_structure(self):
-        return self.t.get_parent_tree_structure()
-
-    # @print_output
-    @timecost(10)
-    def tree_get_booking_seq(self):
-        return self.t.get_booking_sequence()
-
-    @timecost(10)
-    def datatree(self):
-        return DataTree(
-            tree=Tree(root='project', cst_pki=self.cst_pki, tables=self.tables)
-        )
-
-    @timecost(10)
-    def datatree_with_exist_tree(self):
-        return DataTree(tree=self.t)
-
-    @timecost(1)
-    def datatree_from_sql(self):
-        return self.dt.from_sql(
-            index_field='nick',
-            index_values={'华泰南方1期'},
-            con=self.curd.con
-        )
-
-    @timecost(1)
-    def datatree_from_sql_all(self):
-        return self.dt.from_sql(
-            con=self.curd.con
-        )
-
-    @timecost(1)
-    def datatree_itertrees(self):
-        names = []
-        for i, datat in self.dt.itertrees():
-            names.append(datat['name'])
-
-    @timecost(10)
-    def datatree_loop_p(self):
-        for _ in self.dt.ps:
-            pass
-
-    @timecost(10)
-    def datatree_loop_c(self):
-        for _ in self.dt.cs:
-            pass
-
-    @timecost(10)
-    def datatree_json_obj_base(self):
-        return self.dt.json_obj_base()
-
-    @timecost(10)
-    def datatree_json_obj(self):
-        return self.dt.json_obj
-
-    @timecost(10)
-    def datatree_from_relevant_data_set(self):
-        return self.dt.from_relevant_data_set(relevant_data_set=self.dt.relevant_data_set)
-
-    def datatree_fancy_indexing(self):
-        self.datatree_from_sql()
-        return self.dt.c['project_level', 'name'].data
-
-    def _datatree_command_test(self):
-        print('command_test:')
-        self.datatree_from_sql()
-        exec("dt = self.dt")
-        while True:
-            s = input('commands:')
-            try:
-                print(eval(s))
-            except Exception as e:
-                print(e)
-
-    def all_tests(self, prefix=''):
-        for func_name in self.__dir__():
-            if func_name[:len(prefix)] == prefix:
-                exec(f'self.{func_name}()')
-
-    def from_excel_booking_sheet(self):
-        cst_pki = self.cst_pki
-        tables = self.tables
-        dt = DataTree(root='project', cst_pki=cst_pki, tables=tables)
-        dfs = pd.read_excel(r'C:\Users\Administrator\Desktop\project_fpt_elements'
-                            r'\融资项目录入页面excel版20230809233123-小满助业1号1期.xlsm',
-                            sheet_name=None)
-        dt.from_excel_booking_sheet(dfs=dfs)
-        dt.to_sql(curd=self.curd)
-
-    def get_all_nodes(self):
-        print(self.dt.get_all_nodes())
-
-
-def test_get_reading_seq():
-    r = get_reading_sequence('project', CST_PKI)
-    print(r)
-
-
 if __name__ == '__main__':
-    t = Test()
+    get_booking_sequence(root_nodes=['project'])
