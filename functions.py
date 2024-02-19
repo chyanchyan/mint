@@ -1,3 +1,4 @@
+import os
 from hashlib import sha1
 from copy import deepcopy, copy
 from datetime import datetime as dt
@@ -8,34 +9,61 @@ from helper_function.hf_file import mkdir
 from sys_init import *
 
 from table_objs import *
-from meta import get_table_objs
+from meta import get_table_objs, restore_data_db
 from tree import DataTree, Tree, get_cst_pki, get_booking_sequence
 from xltemplate import render_booking_xl_sheet
 
-from typing import Literal
+from typing import Literal, List
 
 
-def migrate_from_xl_folder(
+def migrate_data_from_xl_folder(
         folder,
         if_exists: Literal["fail", "replace", "append"] = "append"
 ):
     def migration_pandas(data_path):
-        table_name = os.path.basename(data_path)
+        table_name = os.path.basename(data_path)[:-5]
         try:
             data = pd.read_excel(data_path, index_col=False)
             print(data)
             data.to_sql(
                 name=table_name,
-                con=DB_ENGINE,
-                schema=DB_SCHEMA,
+                con=DB_ENGINE_DATA,
+                schema=DB_SCHEMA_DATA,
                 if_exists=if_exists,
                 index=False
             )
         except FileNotFoundError:
             print(f'table: {table_name} xlsx file not exist')
+        except sqlalchemy.exc.OperationalError as e:
+            print()
 
-    booking_seq = get_booking_sequence()
+    booking_seq = get_booking_sequence(schema='data', con=DB_ENGINE_DATA)
+    table_names = []
+    for file in os.listdir(folder):
+        if file.endswith('.xlsx'):
+            table_names.append(file[:-5])
 
+    table_names.sort(key=lambda x: booking_seq.index(x))
+
+    for table_name in table_names:
+        migration_pandas(data_path=os.path.join(folder, table_name + '.xlsx'))
+
+
+def add_table(
+        table_info,
+        cols_info
+):
+    table_name = table_info['table_name']
+    table = MetaTable(table_info=table_info, cols_info=cols_info)
+    model_code = table.to_model_code()
+
+    # 判断名称冲突
+
+    # 更新table_info
+
+    # 更新models
+
+    # 创建表
 
 
 def get_booking_table_names():
@@ -64,7 +92,7 @@ def get_data_list(root, index_field=None, index_values=()):
     dtree.from_sql(
         index_field=index_field,
         index_values=index_values,
-        con=DB_ENGINE
+        con=DB_ENGINE_DATA
     )
 
     data = dtree.data
@@ -453,3 +481,10 @@ def booking_from_xl_sheet(root, file_path):
     status = 0
 
     return status
+
+
+if __name__ == '__main__':
+    # restore_data_db()
+    migrate_data_from_xl_folder(
+        folder=r'F:\db_snapshots\20240219_230213_004427'
+    )

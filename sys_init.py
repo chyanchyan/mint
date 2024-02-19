@@ -80,16 +80,17 @@ DB_USERNAME = ADMIN.get(SYS_MODE, 'db_username')
 DB_PASSWORD = ADMIN.get(SYS_MODE, 'db_password')
 DB_TYPE = CONF.get(SYS_MODE, 'db_type')
 DB_CHARSET = CONF.get(SYS_MODE, 'db_charset')
-DB_SCHEMA = f'{PROJECT_NAME}_{SYS_MODE}'
+DB_SCHEMA_DATA = f'{PROJECT_NAME}_data_{SYS_MODE}'
 DB_SCHEMA_ADMIN = f'{PROJECT_NAME}_admin_{SYS_MODE}'
+DB_SCHEMA_CORE = f'{PROJECT_NAME}_core_{SYS_MODE}'
 
-DB_ENGINE, DB_CON = connect_db(
+DB_ENGINE_DATA, DB_CON_DATA = connect_db(
     db_type=DB_TYPE,
     username=DB_USERNAME,
     password=DB_PASSWORD,
     host=DB_HOST,
     port=DB_PORT,
-    schema=DB_SCHEMA,
+    schema=DB_SCHEMA_DATA,
     charset=DB_CHARSET
 )
 DB_ENGINE_ADMIN, DB_CONN_ADMIN = connect_db(
@@ -101,4 +102,51 @@ DB_ENGINE_ADMIN, DB_CONN_ADMIN = connect_db(
     schema=DB_SCHEMA_ADMIN,
     charset=DB_CHARSET
 )
-DB_INSP = inspect(DB_ENGINE)
+DB_ENGINE_CORE, DB_CONN_CORE = connect_db(
+    db_type=DB_TYPE,
+    username=DB_USERNAME,
+    password=DB_PASSWORD,
+    host=DB_HOST,
+    port=DB_PORT,
+    schema=DB_SCHEMA_CORE,
+    charset=DB_CHARSET
+)
+
+DB_INSP = inspect(DB_ENGINE_DATA)
+DB_TABLES_INFO = None
+DB_COLS_INFO = None
+
+
+def refresh_table_info_to_db():
+    pd.read_excel(
+        os.path.join(PATH_ROOT, 'table_info.xlsx'),
+        sheet_name='tables'
+    ).to_sql(
+        name='tables', con=DB_ENGINE_CORE, if_exists='replace', index=False
+    )
+
+    pd.read_excel(
+        os.path.join(PATH_ROOT, 'table_info.xlsx'),
+        sheet_name='cols'
+    ).to_sql(
+        name='cols', con=DB_ENGINE_CORE, if_exists='replace', index=False
+    )
+
+
+def global_db_table_cols_info():
+    global DB_TABLES_INFO
+    global DB_COLS_INFO
+
+    try:
+        DB_TABLES_INFO = pd.read_sql(sql=f'select * from tables', con=DB_ENGINE_CORE)
+    except Exception as e:
+        refresh_table_info_to_db()
+        DB_TABLES_INFO = pd.read_sql(sql=f'select * from tables', con=DB_ENGINE_CORE)
+
+    try:
+        DB_COLS_INFO = pd.read_sql(sql=f'select * from cols', con=DB_ENGINE_CORE)
+    except Exception as e:
+        refresh_table_info_to_db()
+        DB_COLS_INFO = pd.read_sql(sql=f'select * from cols', con=DB_ENGINE_CORE)
+
+global_db_table_cols_info()

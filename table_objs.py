@@ -176,7 +176,7 @@ class MetaTable(JsonObj):
             # table attr start
             self.table_name = table_info['table_name']
             self.comment = table_info['comment']
-            self.is_data_table = table_info['is_data_table']
+            self.schema = table_info['schema']
             self.naming_from = table_info['naming_from']
             self.ancestors = table_info['ancestors']
             self.web_list_index = table_info['web_list_index']
@@ -219,7 +219,7 @@ class MetaTable(JsonObj):
                 for a in self.ancestors.split(',')
             ]
 
-            if pd.isna(self.is_data_table):
+            if pd.isna(self.schema):
                 table_param_block = ''
             else:
                 ancestors_list = ['Base'] + ancestors_list

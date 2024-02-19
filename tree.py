@@ -1,13 +1,6 @@
-from typing import Set
-import os
-from copy import copy, deepcopy
-
-import pandas as pd
-import numpy as np
 from pandas import ExcelWriter
 from openpyxl import Workbook
 
-from helper_function.hf_string import to_json_str
 from helper_function.hf_xl import fit_col_width
 from helper_function.hf_func import *
 from helper_function.hf_array import get_crop_from_df
@@ -15,24 +8,22 @@ from helper_function.hf_data import *
 from table_objs import JsonObj
 from meta import get_table_objs
 
-from sys_init import DB_SCHEMA, DB_ENGINE
+from sys_init import *
 
 
-def get_cst_pki():
+def get_cst_pki(schema, con):
     stmt = "select * " \
            "from information_schema.KEY_COLUMN_USAGE " \
-           f"where CONSTRAINT_SCHEMA ='{DB_SCHEMA}'"
+           f"where CONSTRAINT_SCHEMA ='{PROJECT_NAME}_{schema}_{SYS_MODE}'"
 
-    res = pd.read_sql(sql=stmt, con=DB_ENGINE)
+    res = pd.read_sql(sql=stmt, con=con)
     return res
 
 
-def get_booking_sequence(root_nodes=None):
-    cst_pki = get_cst_pki()
+def get_booking_sequence(schema, con, root_nodes=None):
+    cst_pki = get_cst_pki(schema=schema, con=con)
     relation_table = cst_pki[['TABLE_NAME', 'REFERENCED_TABLE_NAME']].values.tolist()
     booking_seq = topological_sort(relation_table=relation_table)
-    for item in booking_seq:
-        print(item)
     if root_nodes is not None:
         related_tables = set()
         graph = get_graph(relation_table=relation_table)
@@ -48,13 +39,8 @@ def get_booking_sequence(root_nodes=None):
     return booking_seq
 
 
-def get_reading_sequence(root_nodes=None):
-    return list(reversed(get_booking_sequence(root_nodes=root_nodes)))
-
-
-CST_PKI = get_cst_pki()
-TABLES = get_table_objs()
-BOOKING_SEQUENCE = get_booking_sequence()
+def get_reading_sequence(schema, con, root_nodes=None):
+    return list(reversed(get_booking_sequence(schema=schema, con=con, root_nodes=root_nodes)))
 
 
 class Tree(JsonObj):
@@ -95,7 +81,7 @@ class Tree(JsonObj):
         self.root = root
 
         if cst_pki is None:
-            cst_pki = get_cst_pki()
+            cst_pki = get_cst_pki(schema='data', con=DB_ENGINE_DATA)
         else:
             self.cst_pki = deepcopy(cst_pki)
 
@@ -159,8 +145,8 @@ class Tree(JsonObj):
             self.children.append(child)
 
         self.node_names = self.get_node_names()
-        self.booking_sequence = self.get_booking_sequence()
-        self.reading_sequence = self.get_reading_sequence()
+        self.booking_sequence = get_booking_sequence(schema='data', con=DB_ENGINE_DATA, root_nodes=self.node_names)
+        self.reading_sequence = get_reading_sequence(schema='data', con=DB_ENGINE_DATA, root_nodes=self.node_names)
         self.sort_cols()
 
     def __bool__(self):
@@ -311,23 +297,6 @@ class Tree(JsonObj):
     def get_parent_tree_structure(self):
         res = {p.root: p.get_parent_tree_structure() for p in self.parents}
         return res
-
-    def get_booking_sequence(self):
-        if len(self.node_names) == 0:
-            return []
-        elif len(self.node_names) == 1:
-            return list(self.node_names)
-        else:
-
-            booking_seq = sorted(
-                self.node_names,
-                key=lambda x: BOOKING_SEQUENCE.index(x)
-            )
-
-            return booking_seq
-
-    def get_reading_sequence(self):
-        return get_reading_sequence(root=self.root, cst_pki=self.cst_pki)
 
 
 class DataTree(Tree):

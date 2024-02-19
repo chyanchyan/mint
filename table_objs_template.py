@@ -6,6 +6,7 @@ import numpy as np
 from sys_init import DB_ENGINE_ADMIN
 from helper_function.hf_number import is_number
 from helper_function.hf_data import JsonObj
+from helper_function.hf_string import dash_name_to_camel
 
 js_data_type_map = {
     'Integer': 'int',
@@ -162,7 +163,8 @@ class MetaTable(JsonObj):
     def __init__(
             self,
             table_info: pd.Series = (),
-            cols_info: pd.DataFrame = ()
+            cols_info: pd.DataFrame = (),
+            order=None
     ):
         super(MetaTable, self).__init__()
         if len(table_info) == 0 or len(cols_info) == 0:
@@ -174,7 +176,7 @@ class MetaTable(JsonObj):
             # table attr start
             self.table_name = table_info['table_name']
             self.comment = table_info['comment']
-            self.is_data_table = table_info['is_data_table']
+            self.schema = table_info['schema']
             self.naming_from = table_info['naming_from']
             self.ancestors = table_info['ancestors']
             self.web_list_index = table_info['web_list_index']
@@ -188,6 +190,7 @@ class MetaTable(JsonObj):
             self.pk = [col.col_name for col in self.cols.values() if col.is_primary][0]
             if pd.isna(self.comment):
                 self.comment = ''
+        self.order = order
 
     def to_model_code(self):
         template_str = \
@@ -199,32 +202,38 @@ class MetaTable(JsonObj):
         ancestors_str_template = \
             '(%s)'
 
-        class_init_block = \
-            '    def __init__(self, *args, **kwargs):\n' \
-            '        pass'
-
         table_param_block_template = \
             '    __tablename__ = \'%s\'\n' \
             '    __table_args__ = {\'comment\': \'%s\'}\n'
 
-        if pd.isna(self.table_name):
-            table_param_block = ''
+        if pd.isna(self.ancestors):
+            class_init_block = \
+                '    def __init__(self, *args, **kwargs):\n' \
+                '        pass'
             ancestors_str = ''
+            table_param_block = ''
         else:
             class_init_block = ''
-            ancestors_str = ancestors_str_template % self.ancestors
-            table_param_block = table_param_block_template % (self.table_name, self.comment)
+            ancestors_list = [
+                dash_name_to_camel(a.strip())
+                for a in self.ancestors.split(',')
+            ]
 
-        cols = self.cols_info['col_name'].to_list()
-        orders = self.cols_info['order'].to_list()
-        orders = [order % len(orders) for order in orders]
-        cols = np.array(sorted(zip(orders, cols)))[:, 1]
+            if pd.isna(self.schema):
+                table_param_block = ''
+            else:
+                ancestors_list = ['Base'] + ancestors_list
+                table_param_block = table_param_block_template % (self.table_name, self.comment)
 
-        column_block = '\n'.join([self.cols[col_name].to_model_code()
-                                  for col_name in cols])
+            ancestors = ', '.join(ancestors_list)
+            ancestors_str = ancestors_str_template % ancestors
+        col_list = [col for k, col in self.cols.items()]
+        col_list.sort(key=lambda x: x.order)
+
+        column_block = '\n'.join([col.to_model_code() for col in col_list])
 
         res = template_str % {
-            'class_name': self.class_name,
+            'class_name': dash_name_to_camel(self.table_name),
             'ancestors_str': ancestors_str,
             'class_init_block': class_init_block,
             'table_param_block': table_param_block,

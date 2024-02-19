@@ -1,4 +1,6 @@
 admin.ini
-models.py
+models_data.py
+models_admin.py
+test.py
 table_info.xlsx
 /snapshots
