@@ -1,0 +1,8 @@
+sqlalchemy
+pandas
+numpy
+flask
+openpyxl
+tqdm
+mysqlclient
+pymysql
