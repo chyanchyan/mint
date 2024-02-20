@@ -11,17 +11,22 @@ from meta import get_table_objs
 from sys_init import *
 
 
-def get_cst_pki(schema, con):
+def get_cst_pki():
+    schema_tags = DB_SCHEMAS_INFO['schema_tag'].tolist()
+    constraint_schemas_str = ', '.join([
+        f'"{PROJECT_NAME}_{schema_tag}_{SYS_MODE}"'
+        for schema_tag in schema_tags
+    ])
     stmt = "select * " \
            "from information_schema.KEY_COLUMN_USAGE " \
-           f"where CONSTRAINT_SCHEMA ='{PROJECT_NAME}_{schema}_{SYS_MODE}'"
+           f"where CONSTRAINT_SCHEMA in ({constraint_schemas_str})"
 
-    res = pd.read_sql(sql=stmt, con=con)
+    res = pd.read_sql(sql=stmt, con=DB_ENGINE)
     return res
 
 
-def get_booking_sequence(schema, con, root_nodes=None):
-    cst_pki = get_cst_pki(schema=schema, con=con)
+def get_booking_sequence(root_nodes=None):
+    cst_pki = get_cst_pki()
     relation_table = cst_pki[['TABLE_NAME', 'REFERENCED_TABLE_NAME']].values.tolist()
     booking_seq = topological_sort(relation_table=relation_table)
     if root_nodes is not None:
@@ -39,8 +44,8 @@ def get_booking_sequence(schema, con, root_nodes=None):
     return booking_seq
 
 
-def get_reading_sequence(schema, con, root_nodes=None):
-    return list(reversed(get_booking_sequence(schema=schema, con=con, root_nodes=root_nodes)))
+def get_reading_sequence(root_nodes=None):
+    return list(reversed(get_booking_sequence(root_nodes=root_nodes)))
 
 
 class Tree(JsonObj):
@@ -81,7 +86,7 @@ class Tree(JsonObj):
         self.root = root
 
         if cst_pki is None:
-            cst_pki = get_cst_pki(schema='data', con=DB_ENGINE_DATA)
+            cst_pki = get_cst_pki()
         else:
             self.cst_pki = deepcopy(cst_pki)
 
@@ -145,8 +150,8 @@ class Tree(JsonObj):
             self.children.append(child)
 
         self.node_names = self.get_node_names()
-        self.booking_sequence = get_booking_sequence(schema='data', con=DB_ENGINE_DATA, root_nodes=self.node_names)
-        self.reading_sequence = get_reading_sequence(schema='data', con=DB_ENGINE_DATA, root_nodes=self.node_names)
+        self.booking_sequence = get_booking_sequence(root_nodes=self.node_names)
+        self.reading_sequence = get_reading_sequence(root_nodes=self.node_names)
         self.sort_cols()
 
     def __bool__(self):
@@ -407,18 +412,18 @@ class DataTree(Tree):
 
     def from_sql(
             self,
-            index_field: str = None,
+            index_col: str = None,
             index_values: Set[str] = (),
             con=None,
             limit=None,
             offset=None
     ):
         # root data
-        if index_field is None:
+        if index_col is None:
             where_str = ''
         else:
             values_str = ', '.join([f'"{index_value}"' for index_value in index_values])
-            where_str = f'WHERE `{index_field}` in ({values_str})'
+            where_str = f'WHERE `{index_col}` in ({values_str})'
 
         if limit is None or offset is None:
             limit_offset_str = ''
@@ -628,7 +633,7 @@ class DataTree(Tree):
         col_items = [
             item for item in self.table.cols.items()
             if not pd.isna(item[1].web_list_order)
-               and not item[1].field == ignore_ref_col
+            and not item[1].field == ignore_ref_col
         ]
         col_items.sort(key=lambda x: x[1].web_list_order)
         display_column_names, display_columns = zip(*col_items)
@@ -682,7 +687,7 @@ class DataTree(Tree):
         col_items = [
             item for item in self.table.cols.items()
             if not pd.isna(item[1].web_list_order)
-               and item[1].field != parent_ref
+            and item[1].field != parent_ref
         ]
         col_items.sort(key=lambda x: x[1].web_list_order)
         display_column_names, display_columns = zip(*col_items)
@@ -806,7 +811,6 @@ class DataTree(Tree):
             try:
                 parent_df_raw = dfs[parent_sheet_name]
             except KeyError:
-                parent_df = pd.DataFrame()
                 continue
             parent_df = get_crop_from_df(
                 df=parent_df_raw,
@@ -887,7 +891,7 @@ class DataTree(Tree):
             flag = True
 
         if flag:
-            writer.save()
+            writer._save()
             writer.close()
         else:
             del writer
@@ -929,4 +933,4 @@ class DataTree(Tree):
 
 
 if __name__ == '__main__':
-    get_booking_sequence(root_nodes=['project'])
+    print(get_cst_pki())

@@ -1,43 +1,26 @@
-import os
 from hashlib import sha1
-from copy import deepcopy, copy
+from copy import deepcopy
 from datetime import datetime as dt
 
 from helper_function.hf_string import udf_format, to_json_obj, to_json_str
 from helper_function.hf_file import mkdir
-
+from helper_function.hf_xl import migration_pandas
+from helper_function.hf_db import pd_to_db_check_pk
 from sys_init import *
 
-from table_objs import *
-from meta import get_table_objs, restore_data_db
+from meta import get_table_objs
 from tree import DataTree, Tree, get_cst_pki, get_booking_sequence
 from xltemplate import render_booking_xl_sheet
 
-from typing import Literal, List
+from typing import Literal
 
 
 def migrate_data_from_xl_folder(
         folder,
         if_exists: Literal["fail", "replace", "append"] = "append"
 ):
-    def migration_pandas(data_path):
-        table_name = os.path.basename(data_path)[:-5]
-        try:
-            data = pd.read_excel(data_path, index_col=False)
-            print(data)
-            data.to_sql(
-                name=table_name,
-                con=DB_ENGINE_DATA,
-                schema=DB_SCHEMA_DATA,
-                if_exists=if_exists,
-                index=False
-            )
-        except FileNotFoundError:
-            print(f'table: {table_name} xlsx file not exist')
-        except sqlalchemy.exc.OperationalError as e:
-            print()
 
-    booking_seq = get_booking_sequence(schema='data', con=DB_ENGINE_DATA)
+    booking_seq = get_booking_sequence()
     table_names = []
     for file in os.listdir(folder):
         if file.endswith('.xlsx'):
@@ -46,29 +29,17 @@ def migrate_data_from_xl_folder(
     table_names.sort(key=lambda x: booking_seq.index(x))
 
     for table_name in table_names:
-        migration_pandas(data_path=os.path.join(folder, table_name + '.xlsx'))
+        migration_pandas(
+            engine=DB_ENGINE,
+            data_path=os.path.join(folder, table_name + '.xlsx'),
+            schema=f'{PROJECT_NAME}_data_{SYS_MODE}',
+            if_exists=if_exists
+        )
 
 
-def add_table(
-        table_info,
-        cols_info
-):
-    table_name = table_info['table_name']
-    table = MetaTable(table_info=table_info, cols_info=cols_info)
-    model_code = table.to_model_code()
-
-    # 判断名称冲突
-
-    # 更新table_info
-
-    # 更新models
-
-    # 创建表
-
-
-def get_booking_table_names():
-    tables = pd.read_sql(sql=f'select * from tables', con=DB_ENGINE_ADMIN)
-    tables = tables[tables['is_data_table'] == 1]
+def get_booking_table_names(schema_tag):
+    tables = pd.read_sql(sql=f'select * from tables', con=DB_ENGINE_CORE)
+    tables = tables[tables['schema_tag'] == schema_tag]
     tables.sort_values(by='web_list_index')
     res = [
         {
@@ -81,7 +52,7 @@ def get_booking_table_names():
     return res
 
 
-def get_data_list(root, index_field=None, index_values=()):
+def get_data_list(root, index_col=None, index_values=()):
     cst_pki = get_cst_pki()
     cst_pki = cst_pki[
         (cst_pki['TABLE_NAME'] == root) &
@@ -90,9 +61,9 @@ def get_data_list(root, index_field=None, index_values=()):
     tree = Tree(root=root, cst_pki=cst_pki)
     dtree = DataTree(tree=tree)
     dtree.from_sql(
-        index_field=index_field,
+        index_col=index_col,
         index_values=index_values,
-        con=DB_ENGINE_DATA
+        con=DB_ENGINE
     )
 
     data = dtree.data
@@ -128,17 +99,17 @@ def get_data_list(root, index_field=None, index_values=()):
     return res
 
 
-def get_data_trees(root, index_field=None, index_values=()):
+def get_data_trees(root, index_col=None, index_values=()):
     tree = Tree(root=root)
     dtree = DataTree(tree=tree)
-    dtree.from_sql(con=DB_ENGINE, index_field=index_field, index_values=index_values)
+    dtree.from_sql(con=DB_ENGINE, index_col=index_col, index_values=index_values)
 
     return dtree
 
 
-def get_tree_row(root, index_field, index_values):
+def get_tree_row(root, index_col, index_values):
     data_tree = DataTree(root=root)
-    data_tree.from_sql(index_field=index_field, index_values=index_values, con=DB_ENGINE)
+    data_tree.from_sql(index_col=index_col, index_values=index_values, con=DB_ENGINE)
 
     return data_tree
 
@@ -170,17 +141,13 @@ def get_booking_structure(in_json_obj):
     return json_obj
 
 
-def get_update_fields(in_json_obj):
-    for key, item in in_json_obj.items():
-        if key == 'root':
-            root = copy(item)
-        elif key == 'user_name':
-            user_name = copy(item)
-        else:
-            index_field = copy(key)
-            value = copy(item)
+def get_update_cols(in_json_obj):
+    
+    root = in_json_obj['root']
+    index_col = in_json_obj['index_col']
+    index_value = in_json_obj['index_value']
 
-    tree_row = get_tree_row(root=root, index_field=index_field, index_values=[value])
+    tree_row = get_tree_row(root=root, index_col=index_col, index_values=[index_value])
 
     t_branch = Tree(root=root)
     dtree = DataTree(tree=t_branch)
@@ -257,7 +224,7 @@ def mark_child_name(d_dfs, tree):
         name_ref_col = [col for col in name_ref_col if col.foreign_key.split('.')[0] == naming_from][0]
         root_data_tree = DataTree(tree=tree)
         root_data_tree.from_sql(
-            index_field=name_ref_col.field,
+            index_col=name_ref_col.field,
             index_values={root_df[name_ref_col.field].values[0]},
             con=DB_ENGINE
         )
@@ -286,14 +253,16 @@ def mark_child_name(d_dfs, tree):
 
 
 def mark_auto_name(d, table):
-    naming_fields = [(col_name, col.naming_field_order)
-                     for col_name, col in table.cols.items()
-                     if not pd.isna(col.naming_field_order)]
-    if len(naming_fields) > 0:
-        naming_fields = [field for field, order in sorted(naming_fields, key=lambda x: x[1])]
+    naming_cols = [
+        (col_name, col.naming_field_order)
+        for col_name, col in table.cols.items()
+        if not pd.isna(col.naming_field_order)
+    ]
+    if len(naming_cols) > 0:
+        naming_cols = [field for field, order in sorted(naming_cols, key=lambda x: x[1])]
         d['name'] = [{
             'name':
-            '-'.join([list(d[field][0].values())[0] for field in naming_fields])
+            '-'.join([list(d[field][0].values())[0] for field in naming_cols])
         }]
     return d
 
@@ -311,9 +280,10 @@ def fill_empty_cells_to_null(df: pd.DataFrame):
 
 
 def booking(in_json_obj):
-    user_name = in_json_obj['user_name']
+    # user_name = in_json_obj['user_name']
     root = in_json_obj['data']['root']
     data = in_json_obj['data']['data']
+    schema = f'{PROJECT_NAME}_data_{SYS_MODE}'
 
     tables = get_table_objs()
 
@@ -343,11 +313,10 @@ def booking(in_json_obj):
     d_dfs = mark_child_name(d_dfs=d_dfs, tree=tree)
     d_dfs = strip_values(d_dfs=d_dfs)
 
-    booking_from_dfs(d_dfs=d_dfs, tree=tree)
+    booking_from_dfs(d_dfs=d_dfs, tree=tree, schema=schema)
 
 
-def booking_from_dfs(d_dfs, tree):
-
+def booking_from_dfs(d_dfs, tree, schema):
     for node_root in tree.booking_sequence:
         try:
             d_dfs[node_root]
@@ -366,12 +335,12 @@ def booking_from_dfs(d_dfs, tree):
         pd_to_db_check_pk(
             df=df,
             name=node_root,
-            check_fields=[
+            check_cols=[
                 col.field for col in table.cols.values()
                 if col.check_pk],
             if_conflict='fill_update',
             con=DB_ENGINE,
-            schema=DB_SCHEMA
+            schema=schema
         )
 
 
@@ -402,7 +371,7 @@ def file_upload(file, file_str, folder, timestamped=False):
     filename = file.filename
     split_str = filename.split('.')
     filename_base, ext = '.'.join(split_str[:-1]), split_str[-1]
-    sha_name = sha1(file_str).hexdigest()
+    # sha_name = sha1(file_str).hexdigest()
     if not os.path.exists(folder):
         mkdir(folder)
     if timestamped:
@@ -445,7 +414,7 @@ def gen_booking_xl_sheet_file(root, row_id=''):
     timestamp = dt.now().strftime("%Y%m%d_%H%M%S_%f")
     dtree = DataTree(root=root)
     if row_id != "":
-        dtree.from_sql(index_field='id', index_values={row_id}, con=DB_ENGINE)
+        dtree.from_sql(index_col='id', index_values={row_id}, con=DB_ENGINE)
 
     template_path = os.path.join(PATH_ROOT, 'core', 'xltemplate.xlsm')
     output_folder = os.path.join(PATH_ROOT, 'output', 'booking_xl_sheet')
@@ -470,13 +439,14 @@ def gen_booking_xl_sheet_file(root, row_id=''):
 
 
 def booking_from_xl_sheet(root, file_path):
+    schema = f'{PROJECT_NAME}_data_{SYS_MODE}'
     dtree = DataTree(root=root)
     dfs = pd.read_excel(
         file_path,
         sheet_name=None
     )
     dtree.from_excel_booking_sheet(dfs=dfs)
-    booking_from_dfs(d_dfs=dtree.relevant_data_set, tree=dtree)
+    booking_from_dfs(d_dfs=dtree.relevant_data_set, tree=dtree, schema=schema)
 
     status = 0
 
@@ -484,7 +454,6 @@ def booking_from_xl_sheet(root, file_path):
 
 
 if __name__ == '__main__':
-    # restore_data_db()
     migrate_data_from_xl_folder(
         folder=r'F:\db_snapshots\20240219_230213_004427'
     )

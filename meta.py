@@ -1,8 +1,11 @@
 import os.path
 import re
+import importlib
 
 from sys_init import *
-from table_objs import MetaTable
+import table_objs
+import models
+
 from helper_function.wrappers import sub_wrapper
 from helper_function.hf_file import snapshot
 
@@ -50,13 +53,15 @@ def attr_code_to_list(
     return res
 
 
-def get_table_objs(schema='data'):
+def get_table_objs():
     res = {}
-    table_names = DB_TABLES_INFO[DB_TABLES_INFO['schema'] == schema]['table_name'].tolist()
+    table_names = DB_TABLES_INFO[
+        ~pd.isna(DB_TABLES_INFO['schema_tag'])
+    ]['table_name'].tolist()
 
     for i, table_r in DB_TABLES_INFO.iterrows():
         table_name = table_r['table_name']
-        if table_name not in table_names and not pd.isna(table_r['schema']):
+        if table_name not in table_names and not pd.isna(table_r['schema_tag']):
             continue
 
         if not pd.isna(table_r['ancestors']):
@@ -84,7 +89,7 @@ def get_table_objs(schema='data'):
             DB_COLS_INFO['table_name'].isin(base_ancestor_tables)
         ]
 
-        res[table_r['table_name']] = MetaTable(
+        res[table_r['table_name']] = table_objs.MetaTable(
             table_info=table_r,
             cols_info=table_cols_info,
             order=i
@@ -93,65 +98,37 @@ def get_table_objs(schema='data'):
     return res
 
 
-def refresh_model_file(schema):
+@sub_wrapper(SYS_MODE)
+def drop_data_schema():
+    session_class = sessionmaker(bind=DB_ENGINE)
+    session = session_class()
 
-    # load models file template
-    f = open('models_template.py', encoding='utf-8', mode='r')
-    rs = f.readlines()
-    st_str = '# table class start\n'
-    ed_str = '# table class end\n'
-    pre_block, post_block = rs[: rs.index(st_str) + 1], rs[rs.index(ed_str):]
+    for i, r in DB_SCHEMAS_INFO.iterrows():
+        schema = f'{PROJECT_NAME}_{r["schema_tag"]}_{SYS_MODE}'
 
-    tables = get_table_objs(schema=schema)
-    tables_list = [v for k, v in tables.items()]
-    tables_list.sort(key=lambda x: x.order)
-    table_blocks = []
-    for table in tables_list:
-        table_blocks.append(table.to_model_code())
-        table_blocks.extend(['\n', '\n'])
-
-    res = pre_block + table_blocks + post_block
-
-    # write to file
-    f = open(f'models_{schema}.py', encoding='utf-8', mode='w')
-    f.writelines(res)
-    f.close()
+        session.execute(
+            text(f'drop database if exists {schema}')
+        )
+        session.execute(
+            text(f'create database {schema}')
+        )
+    session.commit()
+    session.close()
 
 
-def create_tables(schema):
-    exec(f'from models_{schema} import Base')
-    print(f'creating tables in {schema}')
-    exec(f'Base.metadata.create_all(DB_ENGINE_{str.upper(schema)})')
-    print(f'creating tables in {schema} done')
-
-
-@sub_wrapper
-def snapshot_models():
-    model_file_path = os.path.join('models.py')
-    snapshot(src_path=model_file_path, dst_folder=PATH_MODEL_SNAPSHOT, auto_timestamp=True, comments='')
-
-
-@sub_wrapper
+@sub_wrapper(SYS_MODE)
 def snapshot_table_obj():
     meta_file_path = os.path.join('table_objs.py')
     snapshot(src_path=meta_file_path, dst_folder=PATH_META_SNAPSHOT, auto_timestamp=True, comments='')
 
 
-@sub_wrapper
-def refresh_models():
-    schemas = set(DB_TABLES_INFO[~pd.isna(DB_TABLES_INFO['schema'])]['schema'].tolist())
-    for schema in schemas:
-        refresh_model_file(schema=schema)
+@sub_wrapper(SYS_MODE)
+def snapshot_models():
+    model_file_path = os.path.join('models.py')
+    snapshot(src_path=model_file_path, dst_folder=PATH_MODEL_SNAPSHOT, auto_timestamp=True, comments='')
 
 
-@sub_wrapper
-def create_all_schema_tables():
-    schemas = set(DB_TABLES_INFO[~pd.isna(DB_TABLES_INFO['schema'])]['schema'].tolist())
-    for schema in schemas:
-        create_tables(schema=schema)
-
-
-@sub_wrapper
+@sub_wrapper(SYS_MODE)
 def refresh_table_obj():
     snapshot_table_obj()
     code = open('table_objs_template.py', 'r').readlines()
@@ -179,37 +156,53 @@ def refresh_table_obj():
     f = open('table_objs.py', 'w')
     f.writelines(code)
     f.close()
+    importlib.reload(table_objs)
 
 
-def restore_data_db():
+@sub_wrapper(SYS_MODE)
+def refresh_models():
+    snapshot_models()
+    # load models file template
+    f = open('models_template.py', encoding='utf-8', mode='r')
+    rs = f.readlines()
+    st_str = '# table class start\n'
+    ed_str = '# table class end\n'
+    pre_block, post_block = rs[: rs.index(st_str) + 1], rs[rs.index(ed_str):]
 
-    session_class = sessionmaker(bind=DB_ENGINE_DATA)
-    session = session_class()
+    tables = get_table_objs()
+    tables_list = [v for k, v in tables.items()]
+    tables_list.sort(key=lambda x: x.order)
+    table_blocks = []
+    for table in tables_list:
+        table_blocks.append(table.to_model_code())
+        table_blocks.extend(['\n', '\n'])
 
-    session.execute(
-        text(f'drop database if exists {DB_SCHEMA_DATA}')
-    )
-    session.execute(
-        text(f'create database {DB_SCHEMA_DATA}')
-    )
-    session.commit()
-    session.close()
+    res = pre_block + table_blocks + post_block
 
-    from models_data import Base
-    engine, con = connect_db(
-        db_type=DB_TYPE,
-        username=DB_USERNAME,
-        password=DB_PASSWORD,
-        host=DB_HOST,
-        port=DB_PORT,
-        schema=DB_SCHEMA_DATA,
-        charset=DB_CHARSET
-    )
+    # write to file
+    f = open(f'models.py', encoding='utf-8', mode='w')
+    f.writelines(res)
+    f.close()
+    importlib.reload(models)
+
+
+@sub_wrapper(SYS_MODE)
+def create_tables():
+    import models
+    engine = create_engine(DB_URL)
     print('creating tables')
-    Base.metadata.create_all(engine)
+    models.Base.metadata.create_all(engine)
     print('tables created')
 
 
+@sub_wrapper(SYS_MODE)
+def restore_db():
+    drop_data_schema()
+    refresh_db_info()
+    refresh_table_obj()
+    refresh_models()
+    create_tables()
+
+
 if __name__ == '__main__':
-    restore_data_db()
-    pass
+    restore_db()

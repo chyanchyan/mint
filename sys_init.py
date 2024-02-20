@@ -5,6 +5,7 @@ import socket
 import configparser
 import traceback
 
+import pandas as pd
 import pymysql
 import sqlalchemy.exc
 from sqlalchemy import create_engine, inspect
@@ -47,77 +48,17 @@ def connect_db(db_type, username, password, host, port, schema, charset, create_
             print(e)
             raise sqlalchemy.exc.OperationalError
 
-    return engine, con
-
-
-PATH_ROOT = os.path.dirname(__file__)
-PATH_ADMIN_INI = os.path.join(PATH_ROOT, 'admin.ini')
-PATH_CONFIG_INI = os.path.join(PATH_ROOT, 'config.ini')
-PATH_SNAPSHOT = os.path.join(PATH_ROOT, 'snapshots')
-PATH_TABLE_INFO_SNAPSHOT = os.path.join(PATH_SNAPSHOT, 'table_info')
-PATH_META_SNAPSHOT = os.path.join(PATH_SNAPSHOT, 'meta')
-PATH_MODEL_SNAPSHOT = os.path.join(PATH_SNAPSHOT, 'models')
-PATH_DB_SNAPSHOT = os.path.join(PATH_SNAPSHOT, 'db')
-
-ADMIN = configparser.ConfigParser()
-CONF = configparser.ConfigParser()
-ADMIN.read(PATH_ADMIN_INI)
-CONF.read(PATH_CONFIG_INI)
-
-OS_TYPE = str.lower(platform.system())
-PROJECT_NAME = CONF.get('SYS', 'project_name')
-HOST_NAME = socket.gethostname()
-TEST_HOST_NAMES = ADMIN.get('SYS', 'test_host_names').split()
-
-if HOST_NAME in TEST_HOST_NAMES:
-    SYS_MODE = 'TEST'
-else:
-    SYS_MODE = 'PROD'
-
-DB_HOST = CONF.get(SYS_MODE, 'db_host')
-DB_PORT = CONF.get(SYS_MODE, 'db_port')
-DB_USERNAME = ADMIN.get(SYS_MODE, 'db_username')
-DB_PASSWORD = ADMIN.get(SYS_MODE, 'db_password')
-DB_TYPE = CONF.get(SYS_MODE, 'db_type')
-DB_CHARSET = CONF.get(SYS_MODE, 'db_charset')
-DB_SCHEMA_DATA = f'{PROJECT_NAME}_data_{SYS_MODE}'
-DB_SCHEMA_ADMIN = f'{PROJECT_NAME}_admin_{SYS_MODE}'
-DB_SCHEMA_CORE = f'{PROJECT_NAME}_core_{SYS_MODE}'
-
-DB_ENGINE_DATA, DB_CON_DATA = connect_db(
-    db_type=DB_TYPE,
-    username=DB_USERNAME,
-    password=DB_PASSWORD,
-    host=DB_HOST,
-    port=DB_PORT,
-    schema=DB_SCHEMA_DATA,
-    charset=DB_CHARSET
-)
-DB_ENGINE_ADMIN, DB_CONN_ADMIN = connect_db(
-    db_type=DB_TYPE,
-    username=DB_USERNAME,
-    password=DB_PASSWORD,
-    host=DB_HOST,
-    port=DB_PORT,
-    schema=DB_SCHEMA_ADMIN,
-    charset=DB_CHARSET
-)
-DB_ENGINE_CORE, DB_CONN_CORE = connect_db(
-    db_type=DB_TYPE,
-    username=DB_USERNAME,
-    password=DB_PASSWORD,
-    host=DB_HOST,
-    port=DB_PORT,
-    schema=DB_SCHEMA_CORE,
-    charset=DB_CHARSET
-)
-
-DB_INSP = inspect(DB_ENGINE_DATA)
-DB_TABLES_INFO = None
-DB_COLS_INFO = None
+    return engine, con, url
 
 
 def refresh_table_info_to_db():
+    pd.read_excel(
+        os.path.join(PATH_ROOT, 'table_info.xlsx'),
+        sheet_name='schemas'
+    ).to_sql(
+        name='schemas', con=DB_ENGINE_CORE, if_exists='replace', index=False
+    )
+
     pd.read_excel(
         os.path.join(PATH_ROOT, 'table_info.xlsx'),
         sheet_name='tables'
@@ -133,20 +74,72 @@ def refresh_table_info_to_db():
     )
 
 
-def global_db_table_cols_info():
+def refresh_db_info():
+    global DB_SCHEMAS_INFO
     global DB_TABLES_INFO
     global DB_COLS_INFO
 
-    try:
-        DB_TABLES_INFO = pd.read_sql(sql=f'select * from tables', con=DB_ENGINE_CORE)
-    except Exception as e:
-        refresh_table_info_to_db()
-        DB_TABLES_INFO = pd.read_sql(sql=f'select * from tables', con=DB_ENGINE_CORE)
+    refresh_table_info_to_db()
 
-    try:
-        DB_COLS_INFO = pd.read_sql(sql=f'select * from cols', con=DB_ENGINE_CORE)
-    except Exception as e:
-        refresh_table_info_to_db()
-        DB_COLS_INFO = pd.read_sql(sql=f'select * from cols', con=DB_ENGINE_CORE)
+    DB_SCHEMAS_INFO = pd.read_sql(sql=f'select * from `schemas`', con=DB_ENGINE_CORE)
+    DB_TABLES_INFO = pd.read_sql(sql=f'select * from tables', con=DB_ENGINE_CORE)
+    DB_COLS_INFO = pd.read_sql(sql=f'select * from cols', con=DB_ENGINE_CORE)
 
-global_db_table_cols_info()
+
+PATH_ROOT = os.path.dirname(__file__)
+PATH_ADMIN_INI = os.path.join(PATH_ROOT, 'admin.ini')
+PATH_CONFIG_INI = os.path.join(PATH_ROOT, 'config.ini')
+PATH_SNAPSHOT = os.path.join(PATH_ROOT, 'snapshots')
+PATH_TABLE_INFO_SNAPSHOT = os.path.join(PATH_SNAPSHOT, 'table_info')
+PATH_META_SNAPSHOT = os.path.join(PATH_SNAPSHOT, 'meta')
+PATH_MODEL_SNAPSHOT = os.path.join(PATH_SNAPSHOT, 'models')
+PATH_DB_SNAPSHOT = os.path.join(PATH_SNAPSHOT, 'db')
+
+CONF_ADMIN = configparser.ConfigParser()
+CONF_CONF = configparser.ConfigParser()
+CONF_ADMIN.read(PATH_ADMIN_INI)
+CONF_CONF.read(PATH_CONFIG_INI)
+
+OS_TYPE = str.lower(platform.system())
+PROJECT_NAME = CONF_CONF.get('SYS', 'project_name')
+HOST_NAME = socket.gethostname()
+TEST_HOST_NAMES = CONF_ADMIN.get('SYS', 'test_host_names').split()
+
+if HOST_NAME in TEST_HOST_NAMES:
+    SYS_MODE = 'TEST'
+else:
+    SYS_MODE = 'PROD'
+
+DB_HOST = CONF_CONF.get(SYS_MODE, 'db_host')
+DB_PORT = CONF_CONF.get(SYS_MODE, 'db_port')
+DB_USERNAME = CONF_ADMIN.get(SYS_MODE, 'db_username')
+DB_PASSWORD = CONF_ADMIN.get(SYS_MODE, 'db_password')
+DB_TYPE = CONF_CONF.get(SYS_MODE, 'db_type')
+DB_CHARSET = CONF_CONF.get(SYS_MODE, 'db_charset')
+
+DB_SCHEMA_CORE = f'{PROJECT_NAME}_core_{SYS_MODE}'
+DB_ENGINE_CORE, DB_CON_CORE, DB_URL_CORE = connect_db(
+    db_type=DB_TYPE,
+    username=DB_USERNAME,
+    password=DB_PASSWORD,
+    host=DB_HOST,
+    port=DB_PORT,
+    schema=DB_SCHEMA_CORE,
+    charset=DB_CHARSET
+)
+
+DB_SCHEMAS_INFO = pd.DataFrame()
+DB_TABLES_INFO = pd.DataFrame()
+DB_COLS_INFO = pd.DataFrame()
+refresh_db_info()
+
+DB_ENGINE, DB_CON, DB_URL = connect_db(
+    db_type=DB_TYPE,
+    username=DB_USERNAME,
+    password=DB_PASSWORD,
+    host=DB_HOST,
+    port=DB_PORT,
+    schema='',
+    charset=DB_CHARSET
+)
+DB_INSP = inspect(DB_ENGINE)

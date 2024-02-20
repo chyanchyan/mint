@@ -1,9 +1,7 @@
 import re
-
 import pandas as pd
-import numpy as np
 
-from sys_init import DB_ENGINE_ADMIN
+from sys_init import SYS_MODE, PROJECT_NAME
 from helper_function.hf_number import is_number
 from helper_function.hf_data import JsonObj
 from helper_function.hf_string import dash_name_to_camel
@@ -14,18 +12,6 @@ js_data_type_map = {
     'Date': 'date',
     'DateTime': 'date'
 }
-
-
-def get_tables_info_detail():
-    tables_param = pd.read_sql(sql='select * from tables', con=DB_ENGINE_ADMIN)
-    tables_param.replace({np.nan: None}, inplace=True)
-    return tables_param
-
-
-def get_cols_info_detail():
-    cols_param = pd.read_sql(sql='select * from cols', con=DB_ENGINE_ADMIN)
-    cols_param.replace({np.nan: None}, inplace=True)
-    return cols_param
 
 
 class MetaColumn(JsonObj):
@@ -83,8 +69,11 @@ class MetaColumn(JsonObj):
 
     def to_model_code(self):
         if not pd.isna(self.foreign_key):
+            eles = self.foreign_key.split('.')
+            fk_schema_tag = eles[0]
+            fk_table_col = '.'.join(eles[1:])
             s_fk = ', '.join([
-                '\'%s\'' % self.foreign_key,
+                'f\'{PROJECT_NAME}_%s_{SYS_MODE}.%s\'' % (fk_schema_tag, fk_table_col),
                 'ondelete=\'%s\'' % self.fk_on_delete,
                 'onupdate=\'%s\'' % self.fk_on_update
             ])
@@ -176,11 +165,15 @@ class MetaTable(JsonObj):
             # table attr start
             self.table_name = table_info['table_name']
             self.comment = table_info['comment']
-            self.schema = table_info['schema']
+            self.schema_tag = table_info['schema_tag']
             self.naming_from = table_info['naming_from']
             self.ancestors = table_info['ancestors']
             self.web_list_index = table_info['web_list_index']
             # table attr end
+            if pd.isna(self.schema_tag):
+                self.schema = None
+            else:
+                self.schema = f'{PROJECT_NAME}_{self.schema_tag}_{SYS_MODE}'
             self.cols_info = cols_info
             self.cols = {
                 col_info['col_name']: MetaColumn(col_info=col_info, order=i)
@@ -204,7 +197,7 @@ class MetaTable(JsonObj):
 
         table_param_block_template = \
             '    __tablename__ = \'%s\'\n' \
-            '    __table_args__ = {\'comment\': \'%s\'}\n'
+            '    __table_args__ = {\'schema\': \'%s\', \'comment\': \'%s\'}\n'
 
         if pd.isna(self.ancestors):
             class_init_block = \
@@ -219,11 +212,11 @@ class MetaTable(JsonObj):
                 for a in self.ancestors.split(',')
             ]
 
-            if pd.isna(self.schema):
+            if self.schema is None:
                 table_param_block = ''
             else:
                 ancestors_list = ['Base'] + ancestors_list
-                table_param_block = table_param_block_template % (self.table_name, self.comment)
+                table_param_block = table_param_block_template % (self.table_name, self.schema, self.comment)
 
             ancestors = ', '.join(ancestors_list)
             ancestors_str = ancestors_str_template % ancestors
