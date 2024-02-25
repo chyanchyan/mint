@@ -1,4 +1,3 @@
-from hashlib import sha1
 from copy import deepcopy
 from datetime import datetime as dt
 
