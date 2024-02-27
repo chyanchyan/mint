@@ -1,10 +1,10 @@
 import re
 import pandas as pd
 
-from sys_init import SYS_MODE, PROJECT_NAME
-from helper_function.hf_number import is_number
-from helper_function.hf_data import JsonObj
-from helper_function.hf_string import dash_name_to_camel
+from mint.sys_init import SYS_MODE, PROJECT_NAME
+from mint.helper_function.hf_number import is_number
+from mint.helper_function.hf_data import JsonObj
+from mint.helper_function.hf_string import dash_name_to_camel
 
 js_data_type_map = {
     'Integer': 'int',
@@ -20,13 +20,14 @@ class MetaColumn(JsonObj):
         # col attr start
         self.table_name = col_info['table_name']
         self.col_name = col_info['col_name']
-        self.naming_field_order = col_info['naming_field_order']
+        self.label = col_info['label']
+        self.fill_instructions = col_info['fill_instructions']
         self.data_type = col_info['data_type']
         self.is_primary = col_info['is_primary']
+        self.check_pk = col_info['check_pk']
         self.is_index = col_info['is_index']
-        self.is_row_web_label = col_info['is_row_web_label']
-        self.foreign_key = col_info['foreign_key']
         self.unique = col_info['unique']
+        self.foreign_key = col_info['foreign_key']
         self.fk_on_delete = col_info['fk_on_delete']
         self.fk_on_update = col_info['fk_on_update']
         self.on_update = col_info['on_update']
@@ -34,16 +35,15 @@ class MetaColumn(JsonObj):
         self.autoincrement = col_info['autoincrement']
         self.default = col_info['default']
         self.server_default = col_info['server_default']
+        self.naming_field_order = col_info['naming_field_order']
         self.web_obj = col_info['web_obj']
         self.web_visible = col_info['web_visible']
         self.web_activate = col_info['web_activate']
-        self.check_pk = col_info['check_pk']
-        self.comment = col_info['comment']
-        self.web_label = col_info['web_label']
+        self.is_row_web_label = col_info['is_row_web_label']
         self.web_detail_format = col_info['web_detail_format']
         self.web_template_api_format = col_info['web_template_api_format']
-        self.web_fill_instructions = col_info['web_fill_instructions']
         self.web_list_order = col_info['web_list_order']
+        self.comment = col_info['comment']
         # col attr end
 
         self.order = order
@@ -166,8 +166,8 @@ class MetaTable(JsonObj):
             self.table_name = table_info['table_name']
             self.comment = table_info['comment']
             self.schema_tag = table_info['schema_tag']
-            self.naming_from = table_info['naming_from']
             self.ancestors = table_info['ancestors']
+            self.naming_from = table_info['naming_from']
             self.web_list_index = table_info['web_list_index']
             # table attr end
             if pd.isna(self.schema_tag):
@@ -251,3 +251,48 @@ class MetaTable(JsonObj):
             table_info[param] = eval(f'self.{param}')
 
         return table_info
+
+
+def get_table_objs(tables_info, cols_info):
+    res = {}
+    table_names = tables_info[
+        ~pd.isna(tables_info['schema_tag'])
+    ]['table_name'].tolist()
+
+    for i, table_r in tables_info.iterrows():
+        table_name = table_r['table_name']
+        if table_name not in table_names and not pd.isna(table_r['schema_tag']):
+            continue
+
+        if not pd.isna(table_r['ancestors']):
+            ancestors = [a.strip() for a in table_r['ancestors'].split(',')]
+        else:
+            ancestors = []
+
+        ancestors_copy = list(ancestors)
+        base_ancestor_tables = []
+        while len(ancestors_copy) > 0:
+            ancestor = ancestors_copy.pop()
+            ancestor_row = tables_info[tables_info['table_name'] == ancestor]
+
+            if not pd.isna(ancestor_row['ancestors'].values[0]):
+                ancestor_ancestors = [
+                    a.strip()
+                    for a in ancestor_row['ancestors'].values[0].split(',')
+                ]
+                ancestors_copy.extend(ancestor_ancestors)
+
+            base_ancestor_tables.append(ancestor)
+
+        table_cols_info = cols_info[
+            (cols_info['table_name'] == table_name) |
+            cols_info['table_name'].isin(base_ancestor_tables)
+            ]
+
+        res[table_r['table_name']] = MetaTable(
+            table_info=table_r,
+            cols_info=table_cols_info,
+            order=i
+        )
+
+    return res

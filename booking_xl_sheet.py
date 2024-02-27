@@ -242,7 +242,7 @@ def fill_table(
     return value_row_index
 
 
-def render_booking_xl_sheet(output_path, data_tree: DataTree, template_path, con):
+def render_booking_xl_sheet(output_path, template_path, data_tree: DataTree, con):
 
     tables = data_tree.tables
     root = data_tree.root

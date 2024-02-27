@@ -79,8 +79,6 @@ def refresh_db_info():
     global DB_TABLES_INFO
     global DB_COLS_INFO
 
-    refresh_table_info_to_db()
-
     DB_SCHEMAS_INFO = pd.read_sql(sql=f'select * from `schemas`', con=DB_ENGINE_CORE)
     DB_TABLES_INFO = pd.read_sql(sql=f'select * from tables', con=DB_ENGINE_CORE)
     DB_COLS_INFO = pd.read_sql(sql=f'select * from cols', con=DB_ENGINE_CORE)
@@ -131,6 +129,8 @@ DB_ENGINE_CORE, DB_CON_CORE, DB_URL_CORE = connect_db(
 DB_SCHEMAS_INFO = pd.DataFrame()
 DB_TABLES_INFO = pd.DataFrame()
 DB_COLS_INFO = pd.DataFrame()
+
+refresh_table_info_to_db()
 refresh_db_info()
 
 DB_ENGINE, DB_CON, DB_URL = connect_db(

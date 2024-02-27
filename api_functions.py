@@ -7,15 +7,19 @@ from helper_function.hf_xl import migration_pandas
 from helper_function.hf_db import pd_to_db_check_pk
 from sys_init import *
 
-from meta import get_table_objs
+from meta_files.table_objs import get_table_objs
 from tree import DataTree, Tree, get_cst_pki, get_booking_sequence
-from xltemplate import render_booking_xl_sheet
+from booking_xl_sheet import render_booking_xl_sheet
 
 from typing import Literal
 
 
+data_schema_tag = 'data'
+
+
 def migrate_data_from_xl_folder(
         folder,
+        schema_tag,
         if_exists: Literal["fail", "replace", "append"] = "append"
 ):
 
@@ -31,7 +35,7 @@ def migrate_data_from_xl_folder(
         migration_pandas(
             engine=DB_ENGINE,
             data_path=os.path.join(folder, table_name + '.xlsx'),
-            schema=f'{PROJECT_NAME}_data_{SYS_MODE}',
+            schema=f'{PROJECT_NAME}_{schema_tag}_{SYS_MODE}',
             if_exists=if_exists
         )
 
@@ -60,6 +64,7 @@ def get_data_list(root, index_col=None, index_values=()):
     tree = Tree(root=root, cst_pki=cst_pki)
     dtree = DataTree(tree=tree)
     dtree.from_sql(
+        schema_tag=data_schema_tag,
         index_col=index_col,
         index_values=index_values,
         con=DB_ENGINE
@@ -68,10 +73,10 @@ def get_data_list(root, index_col=None, index_values=()):
     data = dtree.data
 
     for col in dtree.table.cols.values():
-        if col.field == dtree.pk:
+        if col.col_name == dtree.pk:
             data[dtree.pk] = data.index
         f = col.web_detail_format
-        data[col.field] = data[col.field].apply(lambda x: udf_format(x, f))
+        data[col.col_name] = data[col.col_name].apply(lambda x: udf_format(x, f))
     data.reset_index(drop=True, inplace=True)
     data.sort_values(by=tree.pk, ascending=False, inplace=True)
 
@@ -85,14 +90,14 @@ def get_data_list(root, index_col=None, index_values=()):
     res = {
         'cols': [
             {
-                'name': col.field,
-                'web_label': col.web_label,
+                'name': col.col_name,
+                'web_label': col.label,
                 'data_type': col.data_type,
                 'web_obj': col.web_obj
             }
             for col in web_list_cols
         ],
-        'rows': data[[col.field for col in web_list_cols]].to_dict(orient='records')
+        'rows': data[[col.col_name for col in web_list_cols]].to_dict(orient='records')
     }
 
     return res
@@ -101,7 +106,12 @@ def get_data_list(root, index_col=None, index_values=()):
 def get_data_trees(root, index_col=None, index_values=()):
     tree = Tree(root=root)
     dtree = DataTree(tree=tree)
-    dtree.from_sql(con=DB_ENGINE, index_col=index_col, index_values=index_values)
+    dtree.from_sql(
+        schema_tag=data_schema_tag,
+        con=DB_ENGINE,
+        index_col=index_col,
+        index_values=index_values
+    )
 
     return dtree
 
@@ -223,12 +233,12 @@ def mark_child_name(d_dfs, tree):
         name_ref_col = [col for col in name_ref_col if col.foreign_key.split('.')[0] == naming_from][0]
         root_data_tree = DataTree(tree=tree)
         root_data_tree.from_sql(
-            index_col=name_ref_col.field,
-            index_values={root_df[name_ref_col.field].values[0]},
+            index_col=name_ref_col.col_name,
+            index_values={root_df[name_ref_col.col_name].values[0]},
             con=DB_ENGINE
         )
         root_df['name'] = root_df.apply(
-            lambda x: '-'.join([x[name_ref_col.field], tree.root, str(len(root_data_tree.data))]),
+            lambda x: '-'.join([x[name_ref_col.col_name], tree.root, str(len(root_data_tree.data))]),
             axis=1
         )
 
@@ -335,7 +345,7 @@ def booking_from_dfs(d_dfs, tree, schema):
             df=df,
             name=node_root,
             check_cols=[
-                col.field for col in table.cols.values()
+                col.col_name for col in table.cols.values()
                 if col.check_pk],
             if_conflict='fill_update',
             con=DB_ENGINE,
@@ -452,7 +462,31 @@ def booking_from_xl_sheet(root, file_path):
     return status
 
 
-if __name__ == '__main__':
+def test_migrate_data_from_xl_folder():
     migrate_data_from_xl_folder(
-        folder=r'F:\db_snapshots\20240219_230213_004427'
+        folder=r'F:\db_snapshots\20240219_230213_004427',
+        schema_tag='data'
     )
+
+
+def test_get_booking_table_names():
+    res = get_booking_table_names('data')
+    print('\n'.join(map(str, res)))
+
+
+def test_get_data_list():
+    res = get_data_list(root='project')
+    for item in res['cols']:
+        print(item)
+    for item in res['rows']:
+        print(item)
+
+
+def test_get_data_trees():
+    t = get_data_trees(root='project', index_col='name', index_values=['中信证券圆满1号第3期资产支持专项计划'])
+    jo = t.json_obj
+    print(jo['data'])
+
+
+if __name__ == '__main__':
+    test_get_data_trees()

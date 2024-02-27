@@ -5,8 +5,7 @@ from helper_function.hf_xl import fit_col_width
 from helper_function.hf_func import *
 from helper_function.hf_array import get_crop_from_df
 from helper_function.hf_data import *
-from table_objs import JsonObj
-from meta import get_table_objs
+from mint.meta_files.table_objs import get_table_objs
 
 from sys_init import *
 
@@ -87,11 +86,12 @@ class Tree(JsonObj):
 
         if cst_pki is None:
             cst_pki = get_cst_pki()
-        else:
-            self.cst_pki = deepcopy(cst_pki)
+        self.cst_pki = deepcopy(cst_pki)
 
         if tables is None:
-            tables = get_table_objs()
+            tables = get_table_objs(tables_info=DB_TABLES_INFO, cols_info=DB_COLS_INFO)
+        self.tables = tables
+        self.table = tables[root]
 
         self.ref = ref
         self.reffed = reffed
@@ -105,8 +105,6 @@ class Tree(JsonObj):
             (cst_pki['CONSTRAINT_NAME'] == 'PRIMARY') &
             (cst_pki['TABLE_NAME'] == root)
             ]['COLUMN_NAME'].values[0]
-        self.tables = tables
-        self.table = tables[root]
 
         self.ref_info = cst_pki[
             (cst_pki['CONSTRAINT_NAME'] != 'PRIMARY') &
@@ -190,7 +188,7 @@ class Tree(JsonObj):
         return res
 
     def sort_cols(self):
-        self.children.sort(key=lambda x: x.table.id)
+        # self.children.sort(key=lambda x: x.table.id)
         cols = self.table.cols
         col_orders = dict(zip(cols.keys(), [col.order for col in cols.values()]))
 
@@ -412,12 +410,14 @@ class DataTree(Tree):
 
     def from_sql(
             self,
+            schema_tag,
             index_col: str = None,
             index_values: Set[str] = (),
             con=None,
             limit=None,
             offset=None
     ):
+        schema = f'{PROJECT_NAME}_{schema_tag}_{SYS_MODE}'
         # root data
         if index_col is None:
             where_str = ''
@@ -430,7 +430,7 @@ class DataTree(Tree):
         else:
             limit_offset_str = f'limit {str(limit)} offset {str(offset)}'
 
-        sql = f'SELECT * FROM {self.root} {where_str} {limit_offset_str}'
+        sql = f'SELECT * FROM {schema}.{self.root} {where_str} {limit_offset_str}'
         root_data = pd.read_sql(sql=sql, con=con, index_col=self.pk)
         if len(root_data) == 0:
             print(f'empty result for root: "{self.root}" \n'
@@ -451,7 +451,8 @@ class DataTree(Tree):
             )
 
             # relevant data
-            reading_seq = self.reading_sequence[1:]
+            reading_seq = list(self.reading_sequence)
+            reading_seq.remove(self.root)
 
             for node_name in reading_seq:
                 where_str_list = []
@@ -474,7 +475,7 @@ class DataTree(Tree):
 
                 all_where_str = ' or '.join(where_str_list)
 
-                sql = f'SELECT * FROM {node_name} WHERE {all_where_str}'
+                sql = f'SELECT * FROM {schema}.{node_name} WHERE {all_where_str}'
                 data = pd.read_sql(sql=sql, con=con, index_col='id')
                 relevant_data_set[node_name] = data
 
@@ -738,18 +739,18 @@ class DataTree(Tree):
 
         return res
 
-    def get_all_parents_with_full_value(self, con):
+    def get_all_parents_with_full_value(self, con, schema_tag):
         res = {}
         all_parents = self.get_all_parents()
         for p_name, p in all_parents.items():
             dp = DataTree(tree=p)
-            dp.from_sql(con=con)
+            dp.from_sql(schema_tag=schema_tag, con=con)
             res[p.root] = dp
         return res
 
-    def get_parents_select_values(self, con):
+    def get_parents_select_values(self, con, schema_tag):
         res = {}
-        all_parents = self.get_all_parents_with_full_value(con=con)
+        all_parents = self.get_all_parents_with_full_value(con=con, schema_tag=schema_tag)
         for p_name, p in all_parents.items():
             try:
                 res[p.root] = p.data[p.reffed].to_list()
