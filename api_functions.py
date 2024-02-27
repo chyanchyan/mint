@@ -1,10 +1,11 @@
+import os.path
 from copy import deepcopy
 from datetime import datetime as dt
 
 from helper_function.hf_string import udf_format, to_json_obj, to_json_str
 from helper_function.hf_file import mkdir
 from helper_function.hf_xl import migration_pandas
-from helper_function.hf_db import pd_to_db_check_pk
+from helper_function.hf_db import pd_to_db_check_pk, export_xl
 from sys_init import *
 
 from meta_files.table_objs import get_table_objs
@@ -15,6 +16,25 @@ from typing import Literal
 
 
 data_schema_tag = 'data'
+
+
+def snapshot_database():
+
+    if not os.path.exists(PATH_DB_SNAPSHOT):
+        mkdir(PATH_DB_SNAPSHOT)
+
+    for schema_tag in DB_SCHEMAS_INFO['schema_tag'].tolist():
+        schema = f'{PROJECT_NAME}_{schema_tag}_{SYS_MODE}'
+        folder = os.path.join(PATH_DB_SNAPSHOT, schema, dt.now().strftime('%Y%m%d_%H%M%S_%f'))
+        if not os.path.exists(folder):
+            mkdir(folder)
+
+        export_xl(
+            output_folder=folder,
+            con=DB_ENGINE,
+            schema=schema,
+            table_names=None
+        )
 
 
 def migrate_data_from_xl_folder(
@@ -483,10 +503,12 @@ def test_get_data_list():
 
 
 def test_get_data_trees():
-    t = get_data_trees(root='project', index_col='name', index_values=['中信证券圆满1号第3期资产支持专项计划'])
+    root = 'account'
+    index_values = ['c1']
+    t = get_data_trees(root=root, index_col='name', index_values=index_values)
     jo = t.json_obj
     print(jo['data'])
 
 
 if __name__ == '__main__':
-    test_get_data_trees()
+    snapshot_database()

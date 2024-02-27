@@ -5,7 +5,7 @@ from helper_function.hf_xl import fit_col_width
 from helper_function.hf_func import *
 from helper_function.hf_array import get_crop_from_df
 from helper_function.hf_data import *
-from mint.meta_files.table_objs import get_table_objs
+from meta_files.table_objs import get_table_objs
 
 from sys_init import *
 

@@ -1,10 +1,10 @@
 import re
 import pandas as pd
 
-from mint.sys_init import SYS_MODE, PROJECT_NAME
-from mint.helper_function.hf_number import is_number
-from mint.helper_function.hf_data import JsonObj
-from mint.helper_function.hf_string import dash_name_to_camel
+from sys_init import SYS_MODE, PROJECT_NAME
+from helper_function.hf_number import is_number
+from helper_function.hf_data import JsonObj
+from helper_function.hf_string import dash_name_to_camel
 
 js_data_type_map = {
     'Integer': 'int',
@@ -15,7 +15,7 @@ js_data_type_map = {
 
 
 class MetaColumn(JsonObj):
-    def __init__(self, col_info: pd.Series, order):
+    def __init__(self, table_info: pd.Series, col_info: pd.Series, order):
         super(MetaColumn, self).__init__()
         # col attr start
         self.table_name = col_info['table_name']
@@ -24,7 +24,6 @@ class MetaColumn(JsonObj):
         self.fill_instructions = col_info['fill_instructions']
         self.data_type = col_info['data_type']
         self.is_primary = col_info['is_primary']
-        self.check_pk = col_info['check_pk']
         self.is_index = col_info['is_index']
         self.unique = col_info['unique']
         self.foreign_key = col_info['foreign_key']
@@ -35,11 +34,9 @@ class MetaColumn(JsonObj):
         self.autoincrement = col_info['autoincrement']
         self.default = col_info['default']
         self.server_default = col_info['server_default']
-        self.naming_field_order = col_info['naming_field_order']
         self.web_obj = col_info['web_obj']
         self.web_visible = col_info['web_visible']
         self.web_activate = col_info['web_activate']
-        self.is_row_web_label = col_info['is_row_web_label']
         self.web_detail_format = col_info['web_detail_format']
         self.web_template_api_format = col_info['web_template_api_format']
         self.web_list_order = col_info['web_list_order']
@@ -47,12 +44,14 @@ class MetaColumn(JsonObj):
         # col attr end
 
         self.order = order
+        self.table_info = table_info
+        self.col_info = col_info
 
         if is_number(self.default):
             self.default_value_data_type = 'non_str'
-            self.default = int(self.default)
+            self.default = float(self.default)
         else:
-            if self.default:
+            if not pd.isna(self.default):
                 if self.default[-2:] == '()':
                     self.default_value_data_type = 'func'
                 else:
@@ -69,11 +68,10 @@ class MetaColumn(JsonObj):
 
     def to_model_code(self):
         if not pd.isna(self.foreign_key):
-            eles = self.foreign_key.split('.')
-            fk_schema_tag = eles[0]
-            fk_table_col = '.'.join(eles[1:])
+            fk_table, fk_col = self.foreign_key.split('.')
+            fk_schema_tag = self.table_info['schema_tag']
             s_fk = ', '.join([
-                'f\'{PROJECT_NAME}_%s_{SYS_MODE}.%s\'' % (fk_schema_tag, fk_table_col),
+                'f\'{PROJECT_NAME}_%s_{SYS_MODE}.%s.%s\'' % (fk_schema_tag, fk_table, fk_col),
                 'ondelete=\'%s\'' % self.fk_on_delete,
                 'onupdate=\'%s\'' % self.fk_on_update
             ])
@@ -166,8 +164,8 @@ class MetaTable(JsonObj):
             self.table_name = table_info['table_name']
             self.comment = table_info['comment']
             self.schema_tag = table_info['schema_tag']
-            self.ancestors = table_info['ancestors']
             self.naming_from = table_info['naming_from']
+            self.ancestors = table_info['ancestors']
             self.web_list_index = table_info['web_list_index']
             # table attr end
             if pd.isna(self.schema_tag):
@@ -176,7 +174,7 @@ class MetaTable(JsonObj):
                 self.schema = f'{PROJECT_NAME}_{self.schema_tag}_{SYS_MODE}'
             self.cols_info = cols_info
             self.cols = {
-                col_info['col_name']: MetaColumn(col_info=col_info, order=i)
+                col_info['col_name']: MetaColumn(table_info=table_info, col_info=col_info, order=i)
                 for i, (col_index, col_info) in enumerate(cols_info.iterrows())
             }
 
