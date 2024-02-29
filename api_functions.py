@@ -2,20 +2,21 @@ import os.path
 from copy import deepcopy
 from datetime import datetime as dt
 
+from sys_init import *
+
 from helper_function.hf_string import udf_format, to_json_obj, to_json_str
 from helper_function.hf_file import mkdir
 from helper_function.hf_xl import migration_pandas
-from helper_function.hf_db import pd_to_db_check_pk, export_xl
-from sys_init import *
+from helper_function.hf_db import df_to_db, export_xl
 
-from meta_files.table_objs import get_table_objs
+from meta_files.table_objs import get_tables
 from tree import DataTree, Tree, get_cst_pki, get_booking_sequence
 from booking_xl_sheet import render_booking_xl_sheet
 
 from typing import Literal
 
 
-data_schema_tag = 'data'
+TABLES = get_tables(tables_info=DB_TABLES_INFO, cols_info=DB_COLS_INFO)
 
 
 def snapshot_database():
@@ -23,8 +24,7 @@ def snapshot_database():
     if not os.path.exists(PATH_DB_SNAPSHOT):
         mkdir(PATH_DB_SNAPSHOT)
 
-    for schema_tag in DB_SCHEMAS_INFO['schema_tag'].tolist():
-        schema = f'{PROJECT_NAME}_{schema_tag}_{SYS_MODE}'
+    for schema in DB_SCHEMAS_INFO['schema'].tolist():
         folder = os.path.join(PATH_DB_SNAPSHOT, schema, dt.now().strftime('%Y%m%d_%H%M%S_%f'))
         if not os.path.exists(folder):
             mkdir(folder)
@@ -42,8 +42,8 @@ def migrate_data_from_xl_folder(
         schema_tag,
         if_exists: Literal["fail", "replace", "append"] = "append"
 ):
-
-    booking_seq = get_booking_sequence()
+    cst_pki = get_cst_pki(con=DB_ENGINE, schemas=DB_SCHEMAS_INFO['schema'].tolist())
+    booking_seq = get_booking_sequence(cst_pki=cst_pki)
     table_names = []
     for file in os.listdir(folder):
         if file.endswith('.xlsx'):
@@ -60,34 +60,31 @@ def migrate_data_from_xl_folder(
         )
 
 
-def get_booking_table_names(schema_tag):
-    tables = pd.read_sql(sql=f'select * from tables', con=DB_ENGINE_CORE)
-    tables = tables[tables['schema_tag'] == schema_tag]
-    tables.sort_values(by='web_list_index')
+def get_booking_table_names():
     res = [
         {
-            'name': r['table_name'],
-            'web_label': r['comment']
+            'name': table.table_name,
+            'web_label': table.label,
+            'order': table.web_list_index
         }
-        for i, r in tables.iterrows()
-        if not pd.isna(r['web_list_index'])
+        for i, table in TABLES.items()
+        if not pd.isna(table.web_list_index)
     ]
     return res
 
 
 def get_data_list(root, index_col=None, index_values=()):
-    cst_pki = get_cst_pki()
+    cst_pki = get_cst_pki(con=DB_ENGINE, schemas=DB_SCHEMAS_INFO['schema'].tolist())
     cst_pki = cst_pki[
         (cst_pki['TABLE_NAME'] == root) &
         (cst_pki['CONSTRAINT_NAME'] == 'PRIMARY')
     ]
-    tree = Tree(root=root, cst_pki=cst_pki)
+    tree = Tree(con=DB_ENGINE, tables=TABLES, root=root, cst_pki=cst_pki)
     dtree = DataTree(tree=tree)
     dtree.from_sql(
-        schema_tag=data_schema_tag,
+        con=DB_ENGINE,
         index_col=index_col,
-        index_values=index_values,
-        con=DB_ENGINE
+        index_values=index_values
     )
 
     data = dtree.data
@@ -124,10 +121,10 @@ def get_data_list(root, index_col=None, index_values=()):
 
 
 def get_data_trees(root, index_col=None, index_values=()):
-    tree = Tree(root=root)
+
+    tree = Tree(con=DB_ENGINE, tables=TABLES, root=root)
     dtree = DataTree(tree=tree)
     dtree.from_sql(
-        schema_tag=data_schema_tag,
         con=DB_ENGINE,
         index_col=index_col,
         index_values=index_values
@@ -160,8 +157,8 @@ def get_nested_values(root, limit=None, offset=None):
 def get_booking_structure(in_json_obj):
     branch = in_json_obj['branch']
 
-    t_branch = Tree()
-    dtree = DataTree(root=branch)
+    t_branch = Tree(con=DB_ENGINE, tables=TABLES)
+    dtree = DataTree(con=DB_ENGINE, tables=TABLES, root=branch)
 
     select_values = dtree.get_parents_select_values(con=DB_ENGINE)
 
@@ -178,7 +175,7 @@ def get_update_cols(in_json_obj):
 
     tree_row = get_tree_row(root=root, index_col=index_col, index_values=[index_value])
 
-    t_branch = Tree(root=root)
+    t_branch = Tree(con=DB_ENGINE, tables=TABLES, root=root)
     dtree = DataTree(tree=t_branch)
 
     select_values = dtree.get_parents_select_values(con=DB_ENGINE)
@@ -314,11 +311,9 @@ def booking(in_json_obj):
     data = in_json_obj['data']['data']
     schema = f'{PROJECT_NAME}_data_{SYS_MODE}'
 
-    tables = get_table_objs()
-
     nodes = []
     for d in data:
-        node, parents = fetch_data_from_dict(d=d, tables=tables)
+        node, parents = fetch_data_from_dict(d=d, tables=TABLES)
         nodes.append(node)
         nodes.extend(parents)
 
@@ -331,21 +326,21 @@ def booking(in_json_obj):
     for node_root, df in d_dfs.items():
         df = df.replace(to_replace="", value=None)
         print(df)
-        table = tables[node_root]
+        table = TABLES[node_root]
         for col in df.columns:
             if table.cols[col].unique or table.cols[col].foreign_key:
                 df = df.drop_duplicates(subset=df.columns)
         d_dfs[node_root] = df
     print(d_dfs)
-    tree = Tree(root=root)
+    tree = Tree(con=DB_ENGINE, tables=TABLES, root=root)
 
     d_dfs = mark_child_name(d_dfs=d_dfs, tree=tree)
     d_dfs = strip_values(d_dfs=d_dfs)
 
-    booking_from_dfs(d_dfs=d_dfs, tree=tree, schema=schema)
+    dfs_to_db(d_dfs=d_dfs, tree=tree, schema=schema)
 
 
-def booking_from_dfs(d_dfs, tree, schema):
+def dfs_to_db(d_dfs, tree, schema):
     for node_root in tree.booking_sequence:
         try:
             d_dfs[node_root]
@@ -361,7 +356,7 @@ def booking_from_dfs(d_dfs, tree, schema):
         print('*' * 100)
         if len(df) == 0:
             continue
-        pd_to_db_check_pk(
+        df_to_db(
             df=df,
             name=node_root,
             check_cols=[
@@ -475,7 +470,7 @@ def booking_from_xl_sheet(root, file_path):
         sheet_name=None
     )
     dtree.from_excel_booking_sheet(dfs=dfs)
-    booking_from_dfs(d_dfs=dtree.relevant_data_set, tree=dtree, schema=schema)
+    dfs_to_db(d_dfs=dtree.relevant_data_set, tree=dtree, schema=schema)
 
     status = 0
 
@@ -484,13 +479,13 @@ def booking_from_xl_sheet(root, file_path):
 
 def test_migrate_data_from_xl_folder():
     migrate_data_from_xl_folder(
-        folder=r'F:\db_snapshots\20240219_230213_004427',
+        folder=r'E:\projects\vision6\mint\snapshots\db\mint_data_TEST\20240229_201952_153123',
         schema_tag='data'
     )
 
 
 def test_get_booking_table_names():
-    res = get_booking_table_names('data')
+    res = get_booking_table_names()
     print('\n'.join(map(str, res)))
 
 
@@ -503,12 +498,12 @@ def test_get_data_list():
 
 
 def test_get_data_trees():
-    root = 'account'
-    index_values = ['c1']
+    root = 'project'
+    index_values = ['中信重分主体授信20231213']
     t = get_data_trees(root=root, index_col='name', index_values=index_values)
     jo = t.json_obj
-    print(jo['data'])
+    print(jo['values'])
 
 
 if __name__ == '__main__':
-    snapshot_database()
+    test_get_data_trees()

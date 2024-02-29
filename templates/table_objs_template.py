@@ -24,6 +24,7 @@ class MetaColumn(JsonObj):
         self.fill_instructions = col_info['fill_instructions']
         self.data_type = col_info['data_type']
         self.is_primary = col_info['is_primary']
+        self.check_pk = col_info['check_pk']
         self.is_index = col_info['is_index']
         self.unique = col_info['unique']
         self.foreign_key = col_info['foreign_key']
@@ -34,9 +35,11 @@ class MetaColumn(JsonObj):
         self.autoincrement = col_info['autoincrement']
         self.default = col_info['default']
         self.server_default = col_info['server_default']
+        self.naming_field_order = col_info['naming_field_order']
         self.web_obj = col_info['web_obj']
         self.web_visible = col_info['web_visible']
         self.web_activate = col_info['web_activate']
+        self.is_row_web_label = col_info['is_row_web_label']
         self.web_detail_format = col_info['web_detail_format']
         self.web_template_api_format = col_info['web_template_api_format']
         self.web_list_order = col_info['web_list_order']
@@ -68,8 +71,7 @@ class MetaColumn(JsonObj):
 
     def to_model_code(self):
         if not pd.isna(self.foreign_key):
-            fk_table, fk_col = self.foreign_key.split('.')
-            fk_schema_tag = self.table_info['schema_tag']
+            fk_schema_tag, fk_table, fk_col = self.foreign_key.split('.')
             s_fk = ', '.join([
                 'f\'{PROJECT_NAME}_%s_{SYS_MODE}.%s.%s\'' % (fk_schema_tag, fk_table, fk_col),
                 'ondelete=\'%s\'' % self.fk_on_delete,
@@ -164,8 +166,8 @@ class MetaTable(JsonObj):
             self.table_name = table_info['table_name']
             self.comment = table_info['comment']
             self.schema_tag = table_info['schema_tag']
-            self.naming_from = table_info['naming_from']
             self.ancestors = table_info['ancestors']
+            self.naming_from = table_info['naming_from']
             self.web_list_index = table_info['web_list_index']
             # table attr end
             if pd.isna(self.schema_tag):
@@ -251,7 +253,7 @@ class MetaTable(JsonObj):
         return table_info
 
 
-def get_table_objs(tables_info, cols_info):
+def get_tables(tables_info, cols_info):
     res = {}
     table_names = tables_info[
         ~pd.isna(tables_info['schema_tag'])

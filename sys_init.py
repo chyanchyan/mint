@@ -82,6 +82,9 @@ def refresh_db_info():
     DB_SCHEMAS_INFO = pd.read_sql(sql=f'select * from `schemas`', con=DB_ENGINE_CORE)
     DB_TABLES_INFO = pd.read_sql(sql=f'select * from tables', con=DB_ENGINE_CORE)
     DB_COLS_INFO = pd.read_sql(sql=f'select * from cols', con=DB_ENGINE_CORE)
+    DB_SCHEMAS_INFO['schema'] = DB_SCHEMAS_INFO['schema_tag'].apply(
+        lambda x: f'{PROJECT_NAME}_{x}_{SYS_MODE}'
+    )
 
 
 PATH_ROOT = os.path.dirname(__file__)

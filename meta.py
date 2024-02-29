@@ -77,8 +77,8 @@ def refresh_models():
     ed_str = '# table class end\n'
     pre_block, post_block = rs[: rs.index(st_str) + 1], rs[rs.index(ed_str):]
 
-    exec('from meta_files.table_objs import get_table_objs')
-    tables = eval('get_table_objs(tables_info=DB_TABLES_INFO, cols_info=DB_COLS_INFO)')
+    exec('from meta_files.table_objs import get_tables')
+    tables = eval('get_tables(tables_info=DB_TABLES_INFO, cols_info=DB_COLS_INFO)')
     tables_list = [v for k, v in tables.items()]
     tables_list.sort(key=lambda x: x.order)
     table_blocks = []
@@ -116,10 +116,18 @@ def restore_sys():
 
 
 @sub_wrapper(SYS_MODE)
+def restore_table():
+    refresh_table_info_to_db()
+    refresh_db_info()
+    snapshot_table_obj()
+    refresh_table_obj()
+
+
+@sub_wrapper(SYS_MODE)
 def restore_db():
     drop_data_schema()
     create_tables()
 
 
 if __name__ == '__main__':
-    restore_sys()
+    restore_table()

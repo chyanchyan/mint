@@ -1,3 +1,6 @@
+import os
+import pandas as pd
+import numpy as np
 from pandas import ExcelWriter
 from openpyxl import Workbook
 
@@ -5,62 +8,62 @@ from helper_function.hf_xl import fit_col_width
 from helper_function.hf_func import *
 from helper_function.hf_array import get_crop_from_df
 from helper_function.hf_data import *
-from meta_files.table_objs import get_table_objs
-
-from sys_init import *
 
 
-def get_cst_pki():
-    schema_tags = DB_SCHEMAS_INFO['schema_tag'].tolist()
-    constraint_schemas_str = ', '.join([
-        f'"{PROJECT_NAME}_{schema_tag}_{SYS_MODE}"'
-        for schema_tag in schema_tags
-    ])
-    stmt = "select * " \
-           "from information_schema.KEY_COLUMN_USAGE " \
-           f"where CONSTRAINT_SCHEMA in ({constraint_schemas_str})"
+def get_cst_pki(con, schemas):
+    in_str = ', '.join([f'"{schema}"' for schema in schemas])
+    stmt = (
+        "select * from information_schema.KEY_COLUMN_USAGE "
+        f"where CONSTRAINT_SCHEMA in ({in_str})"
+    )
 
-    res = pd.read_sql(sql=stmt, con=DB_ENGINE)
+    res = pd.read_sql(sql=stmt, con=con)
     return res
 
 
-def get_booking_sequence(root_nodes=None):
-    cst_pki = get_cst_pki()
-    relation_table = cst_pki[['TABLE_NAME', 'REFERENCED_TABLE_NAME']].values.tolist()
-    booking_seq = topological_sort(relation_table=relation_table)
+def get_booking_sequence(cst_pki, root_nodes=None):
+
+    relation_info = cst_pki[['TABLE_NAME', 'REFERENCED_TABLE_NAME']].values.tolist()
+
     if root_nodes is not None:
         related_tables = set()
-        graph = get_graph(relation_table=relation_table)
+        graph = get_graph(relation_info=relation_info)
         for node in root_nodes:
             r = get_related_nodes(
                 graph=graph,
                 node=node
             )
             related_tables |= set(r)
+        relation_info = cst_pki[
+            cst_pki['TABLE_NAME'].isin(related_tables) |
+            cst_pki['REFERENCED_TABLE_NAME'].isin(related_tables)
+        ].replace(np.nan, None)[['TABLE_NAME', 'REFERENCED_TABLE_NAME']].values.tolist()
 
-        booking_seq = sorted(list(set(booking_seq) & related_tables), key=lambda x: booking_seq.index(x))
+    booking_seq = topological_sort(relation_info=relation_info)
 
     return booking_seq
 
 
-def get_reading_sequence(root_nodes=None):
-    return list(reversed(get_booking_sequence(root_nodes=root_nodes)))
+def get_reading_sequence(cst_pki, root_nodes=None):
+    return list(reversed(get_booking_sequence(cst_pki=cst_pki, root_nodes=root_nodes)))
 
 
 class Tree(JsonObj):
     def __init__(
             self,
+            con,
+            tables,
             tree=None,
             root=None,
             cst_pki=None,
-            tables: dict = None,
             ref=None,
             reffed=None
     ):
         if tree:
+            self.con = tree.con
+            self.tables = tree.tables
             self.root = tree.root
             self.cst_pki = copy(tree.cst_pki)
-            self.tables = tree.tables
             self.ref = tree.ref
             self.reffed = tree.reffed
             self.table = tree.table
@@ -82,14 +85,14 @@ class Tree(JsonObj):
             self.reading_sequence = tree.reading_sequence
             return
 
+        self.con = con
         self.root = root
 
+        self.schemas = [table.schema for table in tables.values()]
         if cst_pki is None:
-            cst_pki = get_cst_pki()
+            cst_pki = get_cst_pki(con=con, schemas=self.schemas)
         self.cst_pki = deepcopy(cst_pki)
 
-        if tables is None:
-            tables = get_table_objs(tables_info=DB_TABLES_INFO, cols_info=DB_COLS_INFO)
         self.tables = tables
         self.table = tables[root]
 
@@ -122,11 +125,12 @@ class Tree(JsonObj):
                 (cst_pki['REFERENCED_TABLE_NAME'] != parent_root)
                 ]
             parent = Tree(
+                con=con,
+                tables=self.tables,
                 root=parents_cst_row['REFERENCED_TABLE_NAME'],
                 cst_pki=parents_cst_pki,
                 ref=parent_ref,
-                reffed=parent_reffed,
-                tables=self.tables
+                reffed=parent_reffed
             )
             self.parents.append(parent)
 
@@ -139,17 +143,22 @@ class Tree(JsonObj):
                 (cst_pki['TABLE_NAME'] != self.root)
                 ]
             child = Tree(
+                con=con,
+                tables=self.tables,
                 root=child_root,
                 cst_pki=children_cst_pki,
                 ref=child_ref,
-                reffed=child_reffed,
-                tables=self.tables
+                reffed=child_reffed
             )
             self.children.append(child)
 
         self.node_names = self.get_node_names()
-        self.booking_sequence = get_booking_sequence(root_nodes=self.node_names)
-        self.reading_sequence = get_reading_sequence(root_nodes=self.node_names)
+        self.booking_sequence = get_booking_sequence(
+            cst_pki=cst_pki, root_nodes=self.node_names
+        )
+        self.reading_sequence = get_reading_sequence(
+            cst_pki=cst_pki, root_nodes=self.node_names
+        )
         self.sort_cols()
 
     def __bool__(self):
@@ -188,7 +197,6 @@ class Tree(JsonObj):
         return res
 
     def sort_cols(self):
-        # self.children.sort(key=lambda x: x.table.id)
         cols = self.table.cols
         col_orders = dict(zip(cols.keys(), [col.order for col in cols.values()]))
 
@@ -305,15 +313,30 @@ class Tree(JsonObj):
 class DataTree(Tree):
     def __init__(
             self,
+            con=None,
+            tables=None,
             tree=None,
             root=None,
             cst_pki=pd.DataFrame(),
-            tables: dict = None,
             ref=None,
             reffed=None,
             relevant_data_set=None,
     ):
+        if con is None:
+            if tree is None:
+                print('con and tree cannot be None at the same time')
+                raise ValueError
+            else:
+                con = copy(tree.con)
+        if tables is None:
+            if tree is None:
+                print('tables and tree cannot be None at the same time')
+                raise ValueError
+            else:
+                tables = copy(tree.tables)
+
         super().__init__(
+            con=con,
             tree=tree,
             root=root,
             cst_pki=cst_pki,
@@ -356,6 +379,8 @@ class DataTree(Tree):
             relevant_data_set = deepcopy(self.relevant_data_set)
             relevant_data_set[self.root] = row.to_frame().transpose()
             datatree = DataTree(
+                con=self.con,
+                tables=self.tables,
                 tree=self,
                 relevant_data_set={}
             )
@@ -410,15 +435,14 @@ class DataTree(Tree):
 
     def from_sql(
             self,
-            schema_tag,
+            con=None,
             index_col: str = None,
             index_values: Set[str] = (),
-            con=None,
             limit=None,
             offset=None
     ):
-        schema = f'{PROJECT_NAME}_{schema_tag}_{SYS_MODE}'
         # root data
+        root_schema = self.table.schema
         if index_col is None:
             where_str = ''
         else:
@@ -430,7 +454,7 @@ class DataTree(Tree):
         else:
             limit_offset_str = f'limit {str(limit)} offset {str(offset)}'
 
-        sql = f'SELECT * FROM {schema}.{self.root} {where_str} {limit_offset_str}'
+        sql = f'SELECT * FROM {root_schema}.{self.root} {where_str} {limit_offset_str}'
         root_data = pd.read_sql(sql=sql, con=con, index_col=self.pk)
         if len(root_data) == 0:
             print(f'empty result for root: "{self.root}" \n'
@@ -475,7 +499,7 @@ class DataTree(Tree):
 
                 all_where_str = ' or '.join(where_str_list)
 
-                sql = f'SELECT * FROM {schema}.{node_name} WHERE {all_where_str}'
+                sql = f'SELECT * FROM {self.tables[node_name].schema}.{node_name} WHERE {all_where_str}'
                 data = pd.read_sql(sql=sql, con=con, index_col='id')
                 relevant_data_set[node_name] = data
 
@@ -567,6 +591,8 @@ class DataTree(Tree):
     def p_(self, p_name, ref=None):
         p_tree = Tree.p_(self, p_name=p_name, ref=ref)
         p = DataTree(
+            con=self.con,
+            tables=self.tables,
             tree=p_tree
         )
         p.from_relevant_data_set(self.relevant_data_set)
@@ -574,6 +600,8 @@ class DataTree(Tree):
 
     def c_(self, c_name, reffed=None):
         c = DataTree(
+            con=self.con,
+            tables=self.tables,
             tree=Tree.c_(self, c_name=c_name, reffed=reffed)
         )
         c.from_relevant_data_set(self.relevant_data_set)
@@ -591,6 +619,8 @@ class DataTree(Tree):
     def ps(self):
         for parent in self.parents:
             p = DataTree(
+                con=self.con,
+                tables=self.tables,
                 tree=parent
             )
             p.from_relevant_data_set(self.relevant_data_set)
@@ -600,6 +630,8 @@ class DataTree(Tree):
     def cs(self):
         for child in self.children:
             c = DataTree(
+                con=self.con,
+                tables=self.tables,
                 tree=child
             )
             c.from_relevant_data_set(self.relevant_data_set)
@@ -739,18 +771,22 @@ class DataTree(Tree):
 
         return res
 
-    def get_all_parents_with_full_value(self, con, schema_tag):
+    def get_all_parents_with_full_value(self, con):
         res = {}
         all_parents = self.get_all_parents()
         for p_name, p in all_parents.items():
-            dp = DataTree(tree=p)
-            dp.from_sql(schema_tag=schema_tag, con=con)
+            dp = DataTree(
+                con=self.con,
+                tables=self.tables,
+                tree=p
+            )
+            dp.from_sql(con=con)
             res[p.root] = dp
         return res
 
-    def get_parents_select_values(self, con, schema_tag):
+    def get_parents_select_values(self, con):
         res = {}
-        all_parents = self.get_all_parents_with_full_value(con=con, schema_tag=schema_tag)
+        all_parents = self.get_all_parents_with_full_value(con=con)
         for p_name, p in all_parents.items():
             try:
                 res[p.root] = p.data[p.reffed].to_list()
@@ -934,4 +970,4 @@ class DataTree(Tree):
 
 
 if __name__ == '__main__':
-    print(get_cst_pki())
+    pass
