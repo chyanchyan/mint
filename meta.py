@@ -16,15 +16,19 @@ def drop_data_schema():
 
     for i, r in DB_SCHEMAS_INFO.iterrows():
         schema = f'{PROJECT_NAME}_{r["schema_tag"]}_{SYS_MODE}'
-
-        session.execute(
-            text(f'drop database if exists {schema}')
-        )
-        session.execute(
-            text(f'create database {schema}')
-        )
+        drop_schema(session=session, schema=schema)
     session.commit()
     session.close()
+
+
+@sub_wrapper(SYS_MODE)
+def drop_schema(session, schema):
+    session.execute(
+        text(f'drop database if exists {schema}')
+    )
+    session.execute(
+        text(f'create database {schema}')
+    )
 
 
 @sub_wrapper(SYS_MODE)
@@ -129,5 +133,14 @@ def restore_db():
     create_tables()
 
 
+@sub_wrapper(SYS_MODE)
+def add_table():
+    refresh_table_info_to_db()
+    refresh_db_info()
+    snapshot_models()
+    refresh_models()
+    create_tables()
+
+
 if __name__ == '__main__':
-    restore_table()
+    restore_sys()

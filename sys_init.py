@@ -1,6 +1,7 @@
 import os
 import platform
 import socket
+import shutil
 
 import configparser
 import traceback
@@ -10,7 +11,7 @@ import pymysql
 import sqlalchemy.exc
 from sqlalchemy import create_engine, inspect
 
-from settings import *
+from mint.settings import *
 
 
 def connect_db(db_type, username, password, host, port, schema, charset, create_if_not_exist=True):
@@ -52,22 +53,30 @@ def connect_db(db_type, username, password, host, port, schema, charset, create_
 
 
 def refresh_table_info_to_db():
+
+    table_info_path = os.path.join(PATH_ROOT, 'table_info.xlsx')
+    if not os.path.exists(table_info_path):
+        shutil.copy(
+            src=os.path.join(PATH_ROOT, 'templates', 'table_info_template.xlsx'),
+            dst=table_info_path
+        )
+
     pd.read_excel(
-        os.path.join(PATH_ROOT, 'table_info.xlsx'),
+        table_info_path,
         sheet_name='schemas'
     ).to_sql(
         name='schemas', con=DB_ENGINE_CORE, if_exists='replace', index=False
     )
 
     pd.read_excel(
-        os.path.join(PATH_ROOT, 'table_info.xlsx'),
+        table_info_path,
         sheet_name='tables'
     ).to_sql(
         name='tables', con=DB_ENGINE_CORE, if_exists='replace', index=False
     )
 
     pd.read_excel(
-        os.path.join(PATH_ROOT, 'table_info.xlsx'),
+        table_info_path,
         sheet_name='cols'
     ).to_sql(
         name='cols', con=DB_ENGINE_CORE, if_exists='replace', index=False
@@ -85,6 +94,10 @@ def refresh_db_info():
     DB_SCHEMAS_INFO['schema'] = DB_SCHEMAS_INFO['schema_tag'].apply(
         lambda x: f'{PROJECT_NAME}_{x}_{SYS_MODE}'
     )
+
+
+def get_schema(schema_tag):
+    return f'{PROJECT_NAME}_{schema_tag}_{SYS_MODE}'
 
 
 PATH_ROOT = os.path.dirname(__file__)
@@ -118,7 +131,7 @@ DB_PASSWORD = CONF_ADMIN.get(SYS_MODE, 'db_password')
 DB_TYPE = CONF_CONF.get(SYS_MODE, 'db_type')
 DB_CHARSET = CONF_CONF.get(SYS_MODE, 'db_charset')
 
-DB_SCHEMA_CORE = f'{PROJECT_NAME}_core_{SYS_MODE}'
+DB_SCHEMA_CORE = get_schema('core')
 DB_ENGINE_CORE, DB_CON_CORE, DB_URL_CORE = connect_db(
     db_type=DB_TYPE,
     username=DB_USERNAME,

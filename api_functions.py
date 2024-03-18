@@ -2,6 +2,8 @@ import os.path
 from copy import deepcopy
 from datetime import datetime as dt
 
+import pandas as pd
+
 from sys_init import *
 
 from helper_function.hf_string import udf_format, to_json_obj, to_json_str
@@ -46,7 +48,7 @@ def migrate_data_from_xl_folder(
     booking_seq = get_booking_sequence(cst_pki=cst_pki)
     table_names = []
     for file in os.listdir(folder):
-        if file.endswith('.xlsx'):
+        if file.endswith('.xlsx') and file[0] != '~':
             table_names.append(file[:-5])
 
     table_names.sort(key=lambda x: booking_seq.index(x))
@@ -477,33 +479,13 @@ def booking_from_xl_sheet(root, file_path):
     return status
 
 
-def test_migrate_data_from_xl_folder():
-    migrate_data_from_xl_folder(
-        folder=r'E:\projects\vision6\mint\snapshots\db\mint_data_TEST\20240229_201952_153123',
-        schema_tag='data'
-    )
-
-
-def test_get_booking_table_names():
-    res = get_booking_table_names()
-    print('\n'.join(map(str, res)))
-
-
-def test_get_data_list():
-    res = get_data_list(root='project')
-    for item in res['cols']:
-        print(item)
-    for item in res['rows']:
-        print(item)
-
-
-def test_get_data_trees():
-    root = 'project'
-    index_values = ['中信重分主体授信20231213']
-    t = get_data_trees(root=root, index_col='name', index_values=index_values)
-    jo = t.json_obj
-    print(jo['values'])
+def test_get_user_menu():
+    res = get_user_menu(username='te')
+    print(res.to_json())
 
 
 if __name__ == '__main__':
-    test_get_data_trees()
+    migrate_data_from_xl_folder(
+        folder=r'F:\db_snapshots\20240318_095344_952603_mint',
+        schema_tag='data',
+    )
