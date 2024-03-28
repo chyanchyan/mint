@@ -31,7 +31,7 @@ def apply_data_validation(sheet, cell, col_obj, formula1):
         formula1=formula1,
         showDropDown=False,
         allowBlank=False,
-        error=f'该"{col_obj.web_label}"不存在，请重新输入或选择，或前往网页新增选项',
+        error=f'该"{col_obj.label}"不存在，请重新输入或选择，或前往网页新增选项',
         errorTitle='输入值不存在',
         prompt='请选择列表内值',
         promptTitle='请选择列表内值',
@@ -97,7 +97,7 @@ def fill_table(
         col_list = sorted([
             col_name for col_name in table.cols
             if table.cols[col_name].web_visible or
-               table.cols[col_name].class_name == 'DisplayNamed'
+            table.cols[col_name].table_name == 'auto_name'
         ], key=lambda x: table.cols[x].order)
     else:
         col_list = sorted([
@@ -107,11 +107,11 @@ def fill_table(
 
     col_list = [col_name for col_name in col_list
                 if not table.cols[col_name].foreign_key or
-                table.cols[col_name].foreign_key.split('.')[0] != root]
+                table.cols[col_name].foreign_key.split('.')[1] != root]
 
     # fill table label
     apply_cell_format(
-        cell_src=ws_booking.cell(row=dst_row, column=dst_col + 1, value=table.comment),
+        cell_src=ws_booking.cell(row=dst_row, column=dst_col + 1, value=table.label),
         cell_target=cell_formats['table_label']
     )
 
@@ -125,52 +125,56 @@ def fill_table(
     value_row_index = int(start_value_row_index)
     for col_idx, col_name in enumerate(col_list):
         col_obj = table.cols[col_name]
-        col_label = ['*', ''][col_obj.nullable == 1 and col_obj.foreign_key is None] + col_obj.web_label
+        col_label = ['*', ''][col_obj.nullable == 1 and col_obj.foreign_key is None] + col_obj.label
         # cell validation
         if col_obj.foreign_key:
-            parent_table_name, fk = col_obj.foreign_key.split('.')
+            db_name, parent_table_name, fk = col_obj.foreign_key.split('.')
             if parent_table_name == root:
                 continue
             parent_table_obj = tables[parent_table_name]
             select_values_rows_count = len(select_values[parent_table_name])
             parent_visible_col_names = [
-                col.field for col in tables[parent_table_name].cols.values()
-                if col.web_visible or col.class_name == 'DisplayNamed'
+                col.col_name for col in tables[parent_table_name].cols.values()
+                if col.web_visible or col.table_name == 'auto_name'
             ]
             parent_visible_col_names = sorted(
                 parent_visible_col_names,
                 key=lambda x: parent_table_obj.cols[x].order
             )
-            fk_idx = parent_visible_col_names.index(fk) + 4
+            try:
+                fk_idx = parent_visible_col_names.index(fk) + 4
+            except ValueError:
+                print(fk)
+                raise ValueError
             col_letter = get_column_letter(fk_idx)
 
-            formula1 = f'=bks_{parent_table_obj.comment}!${col_letter}$8:' \
+            formula1 = f'=bks_{parent_table_obj.label}!${col_letter}$8:' \
                        f'${col_letter}${str(select_values_rows_count + 9)}'
 
         if direction == 'vertical':
             cell_col = ws_booking.cell(row=dst_row + col_idx, column=dst_col + 3, value=col_label)
-            ws_booking.cell(row=dst_row + col_idx, column=dst_col + 2, value=col_obj.field)
+            ws_booking.cell(row=dst_row + col_idx, column=dst_col + 2, value=col_obj.col_name)
             cell_default = ws_booking.cell(row=dst_row + col_idx, column=dst_col + 4, value=col_obj.default)
             if col_obj.foreign_key:
-                foreign_table, foreign_key = col_obj.foreign_key.split('.')
+                db_name, foreign_table, foreign_key = col_obj.foreign_key.split('.')
                 ws_booking.cell(
                     row=dst_row + col_idx,
                     column=dst_col + 5,
-                    value='fk=' + tables[foreign_table].comment
+                    value='fk=' + tables[foreign_table].label
                 )
             if values:
                 if len(values[col_name]) > 0:
                     cell_default.value = values[col_name][0]
         elif direction == 'horizontal':
             cell_col = ws_booking.cell(row=dst_row, column=dst_col + col_idx + 3, value=col_label)
-            ws_booking.cell(row=dst_row + 1, column=dst_col + col_idx + 3, value=col_obj.field)
+            ws_booking.cell(row=dst_row + 1, column=dst_col + col_idx + 3, value=col_obj.col_name)
             cell_default = ws_booking.cell(row=dst_row + 2, column=dst_col + col_idx + 3, value=col_obj.default)
             if col_obj.foreign_key:
-                foreign_table, foreign_key = col_obj.foreign_key.split('.')
+                db_name, foreign_table, foreign_key = col_obj.foreign_key.split('.')
                 ws_booking.cell(
                     row=dst_row - 1,
                     column=dst_col + col_idx + 3,
-                    value='fk=' + tables[foreign_table].comment
+                    value='fk=' + tables[foreign_table].label
                 )
             if values:
                 try:
@@ -252,7 +256,7 @@ def render_booking_xl_sheet(output_path, template_path, data_tree: DataTree, con
     wb = load_workbook(output_path, keep_vba=True)
     ws_cell_format = wb['cell_format']
     ws_booking = wb.copy_worksheet(wb['bks_root'])
-    ws_booking.title = 'bks_' + data_tree.table.comment
+    ws_booking.title = 'bks_' + data_tree.table.label
 
     data_cell_format = pd.read_excel(template_path, sheet_name='cell_format')
     cell_formats = defaultdict(lambda: ws_cell_format.cell(row=4, column=2))
@@ -272,7 +276,7 @@ def render_booking_xl_sheet(output_path, template_path, data_tree: DataTree, con
     parents_trees = data_tree.get_all_parents_with_full_value(con=con)
     for parent_name, parent in parents_trees.items():
         ws_parent_booking = wb.copy_worksheet(wb['bks_root'])
-        ws_parent_booking.title = 'bks_' + parent.table.comment
+        ws_parent_booking.title = 'bks_' + parent.table.label
         value_row_index = fill_table(
             root=root,
             ws_booking=ws_parent_booking,

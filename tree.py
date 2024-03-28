@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 from pandas import ExcelWriter
 from openpyxl import Workbook
+from copy import copy, deepcopy
 
 from helper_function.hf_xl import fit_col_width
 from helper_function.hf_func import *
@@ -42,10 +43,6 @@ def get_booking_sequence(cst_pki, root_nodes=None):
     booking_seq = topological_sort(relation_info=relation_info)
 
     return booking_seq
-
-
-def get_reading_sequence(cst_pki, root_nodes=None):
-    return list(reversed(get_booking_sequence(cst_pki=cst_pki, root_nodes=root_nodes)))
 
 
 class Tree(JsonObj):
@@ -134,6 +131,8 @@ class Tree(JsonObj):
             )
             self.parents.append(parent)
 
+        self.parents.sort(key=lambda x: self.tables[x.root].order)
+
         for i, child_cst_row in self.reffed_info.iterrows():
             child_root = child_cst_row['TABLE_NAME']
             child_ref = child_cst_row['COLUMN_NAME']
@@ -151,14 +150,14 @@ class Tree(JsonObj):
                 reffed=child_reffed
             )
             self.children.append(child)
+        self.children.sort(key=lambda x: self.tables[x.root].order)
 
         self.node_names = self.get_node_names()
         self.booking_sequence = get_booking_sequence(
             cst_pki=cst_pki, root_nodes=self.node_names
         )
-        self.reading_sequence = get_reading_sequence(
-            cst_pki=cst_pki, root_nodes=self.node_names
-        )
+        self.reading_sequence = [item for item in self.booking_sequence.__reversed__()]
+
         self.sort_cols()
 
     def __bool__(self):
@@ -317,7 +316,7 @@ class DataTree(Tree):
             tables=None,
             tree=None,
             root=None,
-            cst_pki=pd.DataFrame(),
+            cst_pki=None,
             ref=None,
             reffed=None,
             relevant_data_set=None,
@@ -334,6 +333,11 @@ class DataTree(Tree):
                 raise ValueError
             else:
                 tables = copy(tree.tables)
+
+        self.schemas = [table.schema for table in tables.values()]
+
+        if cst_pki is None:
+            cst_pki = get_cst_pki(con=con, schemas=self.schemas)
 
         super().__init__(
             con=con,
@@ -705,7 +709,7 @@ class DataTree(Tree):
             )
 
         res = {
-            'tag': self.table.comment,
+            'tag': self.table.label,
             'columns': columns,
             'dataSource': data_source,
             'children': children
@@ -763,7 +767,7 @@ class DataTree(Tree):
             )
 
         res = {
-            'tag': self.table.comment,
+            'tag': self.table.label,
             'columns': columns,
             'dataSource': data_source,
             'children': children
@@ -800,7 +804,7 @@ class DataTree(Tree):
 
     def from_excel_booking_sheet(self, dfs):
         relevant_data_set = {}
-        root_sheet_name = f'bks_{self.table.comment}'
+        root_sheet_name = f'bks_{self.table.label}'
         root_df_raw = dfs[root_sheet_name]
         root_df = get_crop_from_df(
             df=root_df_raw,
@@ -826,19 +830,24 @@ class DataTree(Tree):
             # mark child ref
             child_df[child.ref] = root_df[child.reffed].values[0]
 
-            # mark child name
-            try:
+            # mark child auto-name
+            naming_cols = sorted([
+                col_obj for col_name, col_obj in child.table.cols.items()
+                if not pd.isna(col_obj.naming_field_order)
+            ], key=lambda x: x.naming_field_order)
+            if len(naming_cols) > 0:
                 child_df['name'] = child_df.apply(
-                    lambda x: '-'.join([x[child.ref], child.root, str(x.name)]),
+                    lambda x: '-'.join([
+                        x[col_obj.col_name] for col_obj in naming_cols
+                    ]),
                     axis=1
                 )
-            except ValueError:
-                pass
+
             relevant_data_set[child.root] = child_df
 
         for parent_root, parent in self.get_all_parents().items():
             try:
-                parent_sheet_name = f'bks_{parent.table.comment}'
+                parent_sheet_name = f'bks_{parent.table.label}'
             except KeyError:
                 print(f'no sheet for root "{parent_root}"')
                 continue
@@ -920,7 +929,7 @@ class DataTree(Tree):
                 )
                 df.rename(columns=column_mapper, inplace=True)
             if table_web_label:
-                node_name = table.comment
+                node_name = table.label
 
             df.to_excel(writer, sheet_name=node_name, index=False,
                         columns=df.columns)

@@ -4,3 +4,4 @@ meta_files/table_objs.py
 test.py
 table_info.xlsx
 /snapshots
+/output

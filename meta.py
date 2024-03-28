@@ -1,21 +1,29 @@
 import os.path
+from datetime import datetime as dt
 
 from sys_init import *
 from helper_function.wrappers import sub_wrapper
-from helper_function.hf_file import snapshot
+from helper_function.hf_file import snapshot, mkdir
 from helper_function.hf_string import list_to_attr_code
+from helper_function.hf_db import export_xl
 
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import text, create_engine
 
 
+
 @sub_wrapper(SYS_MODE)
-def drop_data_schema():
+def drop_schemas(schema_tags=None):
+    if schema_tags is None:
+        schema_tags = []
+        for i, r in DB_SCHEMAS_INFO.iterrows():
+            schema_tags.append(r['schema_tag'])
+
     session_class = sessionmaker(bind=DB_ENGINE)
     session = session_class()
 
-    for i, r in DB_SCHEMAS_INFO.iterrows():
-        schema = f'{PROJECT_NAME}_{r["schema_tag"]}_{SYS_MODE}'
+    for schema_tag in schema_tags:
+        schema = f'{PROJECT_NAME}_{schema_tag}_{SYS_MODE}'
         drop_schema(session=session, schema=schema)
     session.commit()
     session.close()
@@ -98,6 +106,24 @@ def refresh_models():
     f.close()
 
 
+def snapshot_database():
+
+    if not os.path.exists(PATH_DB_SNAPSHOT):
+        mkdir(PATH_DB_SNAPSHOT)
+
+    for schema in DB_SCHEMAS_INFO['schema'].tolist():
+        folder = os.path.join(PATH_DB_SNAPSHOT, schema, dt.now().strftime('%Y%m%d_%H%M%S_%f'))
+        if not os.path.exists(folder):
+            mkdir(folder)
+
+        export_xl(
+            output_folder=folder,
+            con=DB_ENGINE,
+            schema=schema,
+            table_names=None
+        )
+
+
 @sub_wrapper(SYS_MODE)
 def create_tables():
     exec('import meta_files.models')
@@ -109,7 +135,7 @@ def create_tables():
 
 @sub_wrapper(SYS_MODE)
 def restore_sys():
-    drop_data_schema()
+    drop_schemas(['data'])
     refresh_table_info_to_db()
     refresh_db_info()
     snapshot_table_obj()
@@ -129,7 +155,7 @@ def restore_table():
 
 @sub_wrapper(SYS_MODE)
 def restore_db():
-    drop_data_schema()
+    drop_schemas(['data'])
     create_tables()
 
 
@@ -143,4 +169,4 @@ def add_table():
 
 
 if __name__ == '__main__':
-    restore_sys()
+    refresh_table_info_to_db()

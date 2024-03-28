@@ -132,6 +132,8 @@ DB_TYPE = CONF_CONF.get(SYS_MODE, 'db_type')
 DB_CHARSET = CONF_CONF.get(SYS_MODE, 'db_charset')
 
 DB_SCHEMA_CORE = get_schema('core')
+DB_SCHEMA_DATA = get_schema('data')
+
 DB_ENGINE_CORE, DB_CON_CORE, DB_URL_CORE = connect_db(
     db_type=DB_TYPE,
     username=DB_USERNAME,
@@ -139,6 +141,16 @@ DB_ENGINE_CORE, DB_CON_CORE, DB_URL_CORE = connect_db(
     host=DB_HOST,
     port=DB_PORT,
     schema=DB_SCHEMA_CORE,
+    charset=DB_CHARSET
+)
+
+DB_ENGINE_DATA, DB_CON_DATA, DB_URL_DATA = connect_db(
+    db_type=DB_TYPE,
+    username=DB_USERNAME,
+    password=DB_PASSWORD,
+    host=DB_HOST,
+    port=DB_PORT,
+    schema=DB_SCHEMA_DATA,
     charset=DB_CHARSET
 )
 

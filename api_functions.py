@@ -7,7 +7,7 @@ import pandas as pd
 from sys_init import *
 
 from helper_function.hf_string import udf_format, to_json_obj, to_json_str
-from helper_function.hf_file import mkdir
+from helper_function.hf_file import mkdir, get_last_snapshot_timestamp
 from helper_function.hf_xl import migration_pandas
 from helper_function.hf_db import df_to_db, export_xl
 
@@ -16,7 +16,7 @@ from tree import DataTree, Tree, get_cst_pki, get_booking_sequence
 from booking_xl_sheet import render_booking_xl_sheet
 
 from typing import Literal
-
+from mint.helper_function.hf_func import profile_line_by_line
 
 TABLES = get_tables(tables_info=DB_TABLES_INFO, cols_info=DB_COLS_INFO)
 
@@ -44,6 +44,7 @@ def migrate_data_from_xl_folder(
         schema_tag,
         if_exists: Literal["fail", "replace", "append"] = "append"
 ):
+    schema = f'{PROJECT_NAME}_{schema_tag}_{SYS_MODE}'
     cst_pki = get_cst_pki(con=DB_ENGINE, schemas=DB_SCHEMAS_INFO['schema'].tolist())
     booking_seq = get_booking_sequence(cst_pki=cst_pki)
     table_names = []
@@ -54,10 +55,12 @@ def migrate_data_from_xl_folder(
     table_names.sort(key=lambda x: booking_seq.index(x))
 
     for table_name in table_names:
+        file_name = os.path.join(folder, table_name + '.xlsx')
+        print(f'migrating {file_name}')
         migration_pandas(
             engine=DB_ENGINE,
-            data_path=os.path.join(folder, table_name + '.xlsx'),
-            schema=f'{PROJECT_NAME}_{schema_tag}_{SYS_MODE}',
+            data_path=file_name,
+            schema=schema,
             if_exists=if_exists
         )
 
@@ -363,7 +366,7 @@ def dfs_to_db(d_dfs, tree, schema):
             name=node_root,
             check_cols=[
                 col.col_name for col in table.cols.values()
-                if col.check_pk],
+                if col.check_pk == 1],
             if_conflict='fill_update',
             con=DB_ENGINE,
             schema=schema
@@ -438,11 +441,11 @@ def tree_dict_to_json(tree_dict):
 
 def gen_booking_xl_sheet_file(root, row_id=''):
     timestamp = dt.now().strftime("%Y%m%d_%H%M%S_%f")
-    dtree = DataTree(root=root)
+    dtree = DataTree(root=root, con=DB_ENGINE_DATA, tables=TABLES)
     if row_id != "":
         dtree.from_sql(index_col='id', index_values={row_id}, con=DB_ENGINE)
 
-    template_path = os.path.join(PATH_ROOT, 'core', 'xltemplate.xlsm')
+    template_path = os.path.join(PATH_ROOT, 'templates', 'booking_xl_template.xlsm')
     output_folder = os.path.join(PATH_ROOT, 'output', 'booking_xl_sheet')
     mkdir(output_folder)
     output_filename = f'booking_excel-{timestamp}.xlsm'
@@ -466,7 +469,7 @@ def gen_booking_xl_sheet_file(root, row_id=''):
 
 def booking_from_xl_sheet(root, file_path):
     schema = f'{PROJECT_NAME}_data_{SYS_MODE}'
-    dtree = DataTree(root=root)
+    dtree = DataTree(root=root, con=DB_ENGINE_DATA, tables=TABLES)
     dfs = pd.read_excel(
         file_path,
         sheet_name=None
@@ -479,13 +482,24 @@ def booking_from_xl_sheet(root, file_path):
     return status
 
 
-def test_get_user_menu():
-    res = get_user_menu(username='te')
-    print(res.to_json())
+def migrate_from_xlsx(folder=None):
+    if folder is None:
+        parent_folder = os.path.join(PATH_DB_SNAPSHOT, 'mint_data_TEST')
+        last_time_stamp = get_last_snapshot_timestamp(parent_folder)
+        folder = os.path.join(parent_folder, last_time_stamp)
+    migrate_data_from_xl_folder(
+        folder=folder,
+        schema_tag='data',
+    )
+
+
+@profile_line_by_line
+def test_tree():
+    t = Tree(con=DB_ENGINE, tables=TABLES, root='project')
 
 
 if __name__ == '__main__':
-    migrate_data_from_xl_folder(
-        folder=r'F:\db_snapshots\20240318_095344_952603_mint',
-        schema_tag='data',
-    )
+    gen_booking_xl_sheet_file('project')
+    # booking_from_xl_sheet(
+    #     'project',
+    #     r'E:\projects\vision6\mint\output\booking_xl_sheet\booking_excel-20240328_164258_213769.xlsm')
