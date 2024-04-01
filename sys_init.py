@@ -61,26 +61,30 @@ def refresh_table_info_to_db():
             dst=table_info_path
         )
 
-    pd.read_excel(
+    schemas = pd.read_excel(
         table_info_path,
         sheet_name='schemas'
-    ).to_sql(
+    )
+    schemas.to_sql(
         name='schemas', con=DB_ENGINE_CORE, if_exists='replace', index=False
     )
 
-    pd.read_excel(
+    tables = pd.read_excel(
         table_info_path,
         sheet_name='tables'
-    ).to_sql(
+    )
+    tables.to_sql(
         name='tables', con=DB_ENGINE_CORE, if_exists='replace', index=False
     )
 
-    pd.read_excel(
+    cols = pd.read_excel(
         table_info_path,
         sheet_name='cols'
-    ).to_sql(
+    )
+    cols.to_sql(
         name='cols', con=DB_ENGINE_CORE, if_exists='replace', index=False
     )
+    return schemas, tables, cols
 
 
 def refresh_db_info():
@@ -104,10 +108,12 @@ PATH_ROOT = os.path.dirname(__file__)
 PATH_ADMIN_INI = os.path.join(PATH_ROOT, 'admin.ini')
 PATH_CONFIG_INI = os.path.join(PATH_ROOT, 'config.ini')
 PATH_SNAPSHOT = os.path.join(PATH_ROOT, 'snapshots')
+PATH_OUTPUT = os.path.join(PATH_ROOT, 'output')
 PATH_TABLE_INFO_SNAPSHOT = os.path.join(PATH_SNAPSHOT, 'table_info')
 PATH_META_SNAPSHOT = os.path.join(PATH_SNAPSHOT, 'meta')
 PATH_MODEL_SNAPSHOT = os.path.join(PATH_SNAPSHOT, 'models')
 PATH_DB_SNAPSHOT = os.path.join(PATH_SNAPSHOT, 'db')
+
 
 CONF_ADMIN = configparser.ConfigParser()
 CONF_CONF = configparser.ConfigParser()
@@ -131,8 +137,8 @@ DB_PASSWORD = CONF_ADMIN.get(SYS_MODE, 'db_password')
 DB_TYPE = CONF_CONF.get(SYS_MODE, 'db_type')
 DB_CHARSET = CONF_CONF.get(SYS_MODE, 'db_charset')
 
+
 DB_SCHEMA_CORE = get_schema('core')
-DB_SCHEMA_DATA = get_schema('data')
 
 DB_ENGINE_CORE, DB_CON_CORE, DB_URL_CORE = connect_db(
     db_type=DB_TYPE,
@@ -144,22 +150,26 @@ DB_ENGINE_CORE, DB_CON_CORE, DB_URL_CORE = connect_db(
     charset=DB_CHARSET
 )
 
-DB_ENGINE_DATA, DB_CON_DATA, DB_URL_DATA = connect_db(
-    db_type=DB_TYPE,
-    username=DB_USERNAME,
-    password=DB_PASSWORD,
-    host=DB_HOST,
-    port=DB_PORT,
-    schema=DB_SCHEMA_DATA,
-    charset=DB_CHARSET
-)
+DB_SCHEMA_TAGS = pd.read_sql(
+    f'select schema_tag from {get_schema("core")}.schemas',
+    con=DB_ENGINE_CORE
+)['schema_tag'].tolist()
 
-DB_SCHEMAS_INFO = pd.DataFrame()
-DB_TABLES_INFO = pd.DataFrame()
-DB_COLS_INFO = pd.DataFrame()
-
-refresh_table_info_to_db()
-refresh_db_info()
+DB_SCHEMAS = {}
+DB_ENGINES = {}
+DB_CONS = {}
+DB_URLS = {}
+for schema_tag in DB_SCHEMA_TAGS:
+    DB_SCHEMAS[schema_tag] = get_schema(schema_tag=schema_tag)
+    DB_ENGINES[schema_tag], DB_CONS[schema_tag], DB_URLS[schema_tag] = connect_db(
+        db_type=DB_TYPE,
+        username=DB_USERNAME,
+        password=DB_PASSWORD,
+        host=DB_HOST,
+        port=DB_PORT,
+        schema=get_schema(schema_tag=schema_tag),
+        charset=DB_CHARSET
+    )
 
 DB_ENGINE, DB_CON, DB_URL = connect_db(
     db_type=DB_TYPE,
@@ -171,3 +181,5 @@ DB_ENGINE, DB_CON, DB_URL = connect_db(
     charset=DB_CHARSET
 )
 DB_INSP = inspect(DB_ENGINE)
+
+DB_SCHEMAS_INFO, DB_TABLES_INFO, DB_COLS_INFO = refresh_table_info_to_db()

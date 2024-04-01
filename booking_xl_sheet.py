@@ -5,8 +5,8 @@ from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.cell import Cell
 
-from sys_init import *
-from tree import DataTree
+from .sys_init import *
+from .tree import DataTree
 
 
 def apply_cell_format(cell_src: Cell, cell_target: Cell):

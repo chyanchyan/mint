@@ -11,7 +11,6 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy import text, create_engine
 
 
-
 @sub_wrapper(SYS_MODE)
 def drop_schemas(schema_tags=None):
     if schema_tags is None:
@@ -111,7 +110,8 @@ def snapshot_database():
     if not os.path.exists(PATH_DB_SNAPSHOT):
         mkdir(PATH_DB_SNAPSHOT)
 
-    for schema in DB_SCHEMAS_INFO['schema'].tolist():
+    for schema_tag in DB_SCHEMAS_INFO['schema_tag'].tolist():
+        schema = get_schema(schema_tag=schema_tag)
         folder = os.path.join(PATH_DB_SNAPSHOT, schema, dt.now().strftime('%Y%m%d_%H%M%S_%f'))
         if not os.path.exists(folder):
             mkdir(folder)
@@ -169,4 +169,4 @@ def add_table():
 
 
 if __name__ == '__main__':
-    refresh_table_info_to_db()
+    snapshot_database()

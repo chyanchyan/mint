@@ -4,19 +4,19 @@ from datetime import datetime as dt
 
 import pandas as pd
 
-from sys_init import *
+from .sys_init import *
 
-from helper_function.hf_string import udf_format, to_json_obj, to_json_str
-from helper_function.hf_file import mkdir, get_last_snapshot_timestamp
-from helper_function.hf_xl import migration_pandas
-from helper_function.hf_db import df_to_db, export_xl
+from .helper_function.hf_string import udf_format, to_json_obj, to_json_str
+from .helper_function.hf_file import mkdir, get_last_snapshot_timestamp
+from .helper_function.hf_xl import migration_pandas
+from .helper_function.hf_db import df_to_db, export_xl
 
-from meta_files.table_objs import get_tables
-from tree import DataTree, Tree, get_cst_pki, get_booking_sequence
-from booking_xl_sheet import render_booking_xl_sheet
+from .meta_files.table_objs import get_tables
+from .tree import DataTree, Tree, get_cst_pki, get_booking_sequence
+from .booking_xl_sheet import render_booking_xl_sheet
 
 from typing import Literal
-from mint.helper_function.hf_func import profile_line_by_line
+from .helper_function.hf_func import profile_line_by_line
 
 TABLES = get_tables(tables_info=DB_TABLES_INFO, cols_info=DB_COLS_INFO)
 
@@ -441,7 +441,7 @@ def tree_dict_to_json(tree_dict):
 
 def gen_booking_xl_sheet_file(root, row_id=''):
     timestamp = dt.now().strftime("%Y%m%d_%H%M%S_%f")
-    dtree = DataTree(root=root, con=DB_ENGINE_DATA, tables=TABLES)
+    dtree = DataTree(root=root, con=DB_ENGINES['data'], tables=TABLES)
     if row_id != "":
         dtree.from_sql(index_col='id', index_values={row_id}, con=DB_ENGINE)
 
@@ -467,19 +467,14 @@ def gen_booking_xl_sheet_file(root, row_id=''):
     }
 
 
-def booking_from_xl_sheet(root, file_path):
-    schema = f'{PROJECT_NAME}_data_{SYS_MODE}'
-    dtree = DataTree(root=root, con=DB_ENGINE_DATA, tables=TABLES)
+def xl_sheet_to_dtree(root, file_path):
+    dtree = DataTree(root=root, con=DB_ENGINES['data'], tables=TABLES)
     dfs = pd.read_excel(
         file_path,
         sheet_name=None
     )
     dtree.from_excel_booking_sheet(dfs=dfs)
-    dfs_to_db(d_dfs=dtree.relevant_data_set, tree=dtree, schema=schema)
-
-    status = 0
-
-    return status
+    return dtree
 
 
 def migrate_from_xlsx(folder=None):
@@ -499,7 +494,4 @@ def test_tree():
 
 
 if __name__ == '__main__':
-    gen_booking_xl_sheet_file('project')
-    # booking_from_xl_sheet(
-    #     'project',
-    #     r'E:\projects\vision6\mint\output\booking_xl_sheet\booking_excel-20240328_164258_213769.xlsm')
+    pass
