@@ -1,6 +1,11 @@
-from helper_function.hf_data import JsonObj
 from typing import List
-from helper_function.hf_data import to_json_str
+
+if 'mint' in __name__.split('.'):
+    from .helper_function.hf_data import JsonObj
+    from .helper_function.hf_data import to_json_str
+else:
+    from helper_function.hf_data import JsonObj
+    from helper_function.hf_data import to_json_str
 
 
 class AntdTableColumn(JsonObj):

@@ -5,10 +5,16 @@ from pandas import ExcelWriter
 from openpyxl import Workbook
 from copy import copy, deepcopy
 
-from .helper_function.hf_xl import fit_col_width
-from .helper_function.hf_func import *
-from .helper_function.hf_array import get_crop_from_df
-from .helper_function.hf_data import *
+if 'mint' in __name__.split('.'):
+    from .helper_function.hf_xl import fit_col_width
+    from .helper_function.hf_func import *
+    from .helper_function.hf_array import get_crop_from_df
+    from .helper_function.hf_data import *
+else:
+    from helper_function.hf_xl import fit_col_width
+    from helper_function.hf_func import *
+    from helper_function.hf_array import get_crop_from_df
+    from helper_function.hf_data import *
 
 
 def get_cst_pki(con, schemas):

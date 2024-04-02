@@ -2,11 +2,15 @@ import json
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 
-from helper_function.hf_string import to_json_str
-from helper_function.wrappers import api_status_wrapper
+if 'mint' in __name__.split('.'):
+    from .helper_function.hf_string import to_json_str
+    from .helper_function.wrappers import api_status_wrapper
+else:
+    from helper_function.hf_string import to_json_str
+    from helper_function.wrappers import api_status_wrapper
 
 app = Flask(__name__)
-
+CORS(app=app)
 
 
 def get_in_json_obj(req):

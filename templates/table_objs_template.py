@@ -1,10 +1,17 @@
 import re
 import pandas as pd
 
-from sys_init import SYS_MODE, PROJECT_NAME
-from helper_function.hf_number import is_number
-from helper_function.hf_data import JsonObj
-from helper_function.hf_string import dash_name_to_camel
+if 'mint' in __name__.split('.'):
+    from ..sys_init import SYS_MODE, PROJECT_NAME
+    from ..helper_function.hf_number import is_number
+    from ..helper_function.hf_data import JsonObj
+    from ..helper_function.hf_string import dash_name_to_camel
+else:
+    from mint.sys_init import SYS_MODE, PROJECT_NAME
+    from mint.helper_function.hf_number import is_number
+    from mint.helper_function.hf_data import JsonObj
+    from mint.helper_function.hf_string import dash_name_to_camel
+
 
 js_data_type_map = {
     'Integer': 'int',

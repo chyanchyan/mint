@@ -1,22 +1,27 @@
 import os.path
 from copy import deepcopy
 from datetime import datetime as dt
-
-import pandas as pd
-
-from .sys_init import *
-
-from .helper_function.hf_string import udf_format, to_json_obj, to_json_str
-from .helper_function.hf_file import mkdir, get_last_snapshot_timestamp
-from .helper_function.hf_xl import migration_pandas
-from .helper_function.hf_db import df_to_db, export_xl
-
-from .meta_files.table_objs import get_tables
-from .tree import DataTree, Tree, get_cst_pki, get_booking_sequence
-from .booking_xl_sheet import render_booking_xl_sheet
-
 from typing import Literal
-from .helper_function.hf_func import profile_line_by_line
+
+from tree import DataTree, Tree, get_cst_pki, get_booking_sequence
+from booking_xl_sheet import render_booking_xl_sheet
+
+if 'mint' in __name__.split('.'):
+    from .sys_init import *
+    from .meta_files.table_objs import get_tables
+    from .helper_function.hf_string import udf_format, to_json_obj, to_json_str
+    from .helper_function.hf_file import mkdir, get_last_snapshot_timestamp
+    from .helper_function.hf_xl import migration_pandas
+    from .helper_function.hf_db import df_to_db, export_xl
+    from .helper_function.hf_func import profile_line_by_line
+else:
+    from sys_init import *
+    from meta_files.table_objs import get_tables
+    from helper_function.hf_string import udf_format, to_json_obj, to_json_str
+    from helper_function.hf_file import mkdir, get_last_snapshot_timestamp
+    from helper_function.hf_xl import migration_pandas
+    from helper_function.hf_db import df_to_db, export_xl
+    from helper_function.hf_func import profile_line_by_line
 
 TABLES = get_tables(tables_info=DB_TABLES_INFO, cols_info=DB_COLS_INFO)
 
@@ -26,7 +31,8 @@ def snapshot_database():
     if not os.path.exists(PATH_DB_SNAPSHOT):
         mkdir(PATH_DB_SNAPSHOT)
 
-    for schema in DB_SCHEMAS_INFO['schema'].tolist():
+    for schema_tag in DB_SCHEMAS_INFO['schema_tag'].tolist():
+        schema = get_schema(schema_tag=schema_tag)
         folder = os.path.join(PATH_DB_SNAPSHOT, schema, dt.now().strftime('%Y%m%d_%H%M%S_%f'))
         if not os.path.exists(folder):
             mkdir(folder)
@@ -41,18 +47,16 @@ def snapshot_database():
 
 def migrate_data_from_xl_folder(
         folder,
-        schema_tag,
+        schema,
+        booking_sequence,
         if_exists: Literal["fail", "replace", "append"] = "append"
 ):
-    schema = f'{PROJECT_NAME}_{schema_tag}_{SYS_MODE}'
-    cst_pki = get_cst_pki(con=DB_ENGINE, schemas=DB_SCHEMAS_INFO['schema'].tolist())
-    booking_seq = get_booking_sequence(cst_pki=cst_pki)
     table_names = []
     for file in os.listdir(folder):
         if file.endswith('.xlsx') and file[0] != '~':
             table_names.append(file[:-5])
 
-    table_names.sort(key=lambda x: booking_seq.index(x))
+    table_names.sort(key=lambda x: booking_sequence.index(x))
 
     for table_name in table_names:
         file_name = os.path.join(folder, table_name + '.xlsx')
@@ -482,10 +486,21 @@ def migrate_from_xlsx(folder=None):
         parent_folder = os.path.join(PATH_DB_SNAPSHOT, 'mint_data_TEST')
         last_time_stamp = get_last_snapshot_timestamp(parent_folder)
         folder = os.path.join(parent_folder, last_time_stamp)
-    migrate_data_from_xl_folder(
-        folder=folder,
-        schema_tag='data',
-    )
+
+    schemas = [
+        get_schema(schema_tag=schema_tag)
+        for schema_tag in DB_SCHEMAS_INFO['schema_tag'].tolist()
+    ]
+    cst_pki = get_cst_pki(con=DB_ENGINE, schemas=schemas)
+    booking_sequence = get_booking_sequence(cst_pki=cst_pki)
+
+    for schema in schemas:
+        schema_folder = os.path.join(folder, schema)
+        migrate_data_from_xl_folder(
+            folder=schema_folder,
+            schema=schema,
+            booking_sequence=booking_sequence
+        )
 
 
 @profile_line_by_line

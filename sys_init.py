@@ -11,7 +11,10 @@ import pymysql
 import sqlalchemy.exc
 from sqlalchemy import create_engine, inspect
 
-from mint.settings import *
+if 'mint' in __name__.split('.'):
+    from .settings import *
+else:
+    from settings import *
 
 
 def connect_db(db_type, username, password, host, port, schema, charset, create_if_not_exist=True):
@@ -105,15 +108,15 @@ def get_schema(schema_tag):
 
 
 PATH_ROOT = os.path.dirname(__file__)
+PATH_PROJECT =  os.path.dirname(PATH_ROOT)
 PATH_ADMIN_INI = os.path.join(PATH_ROOT, 'admin.ini')
 PATH_CONFIG_INI = os.path.join(PATH_ROOT, 'config.ini')
-PATH_SNAPSHOT = os.path.join(PATH_ROOT, 'snapshots')
-PATH_OUTPUT = os.path.join(PATH_ROOT, 'output')
+PATH_SNAPSHOT = os.path.join(PATH_PROJECT, 'snapshots')
+PATH_OUTPUT = os.path.join(PATH_PROJECT, 'output')
 PATH_TABLE_INFO_SNAPSHOT = os.path.join(PATH_SNAPSHOT, 'table_info')
 PATH_META_SNAPSHOT = os.path.join(PATH_SNAPSHOT, 'meta')
 PATH_MODEL_SNAPSHOT = os.path.join(PATH_SNAPSHOT, 'models')
 PATH_DB_SNAPSHOT = os.path.join(PATH_SNAPSHOT, 'db')
-
 
 CONF_ADMIN = configparser.ConfigParser()
 CONF_CONF = configparser.ConfigParser()
@@ -159,15 +162,15 @@ DB_SCHEMAS = {}
 DB_ENGINES = {}
 DB_CONS = {}
 DB_URLS = {}
-for schema_tag in DB_SCHEMA_TAGS:
-    DB_SCHEMAS[schema_tag] = get_schema(schema_tag=schema_tag)
-    DB_ENGINES[schema_tag], DB_CONS[schema_tag], DB_URLS[schema_tag] = connect_db(
+for TAG in DB_SCHEMA_TAGS:
+    DB_SCHEMAS[TAG] = get_schema(schema_tag=TAG)
+    DB_ENGINES[TAG], DB_CONS[TAG], DB_URLS[TAG] = connect_db(
         db_type=DB_TYPE,
         username=DB_USERNAME,
         password=DB_PASSWORD,
         host=DB_HOST,
         port=DB_PORT,
-        schema=get_schema(schema_tag=schema_tag),
+        schema=get_schema(schema_tag=TAG),
         charset=DB_CHARSET
     )
 
@@ -183,3 +186,7 @@ DB_ENGINE, DB_CON, DB_URL = connect_db(
 DB_INSP = inspect(DB_ENGINE)
 
 DB_SCHEMAS_INFO, DB_TABLES_INFO, DB_COLS_INFO = refresh_table_info_to_db()
+
+
+if __name__ == '__main__':
+    print(PATH_SNAPSHOT)

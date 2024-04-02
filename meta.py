@@ -1,14 +1,20 @@
 import os.path
 from datetime import datetime as dt
-
-from sys_init import *
-from helper_function.wrappers import sub_wrapper
-from helper_function.hf_file import snapshot, mkdir
-from helper_function.hf_string import list_to_attr_code
-from helper_function.hf_db import export_xl
-
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import text, create_engine
+
+if 'mint' in __name__.split('.'):
+    from .sys_init import *
+    from .helper_function.wrappers import sub_wrapper
+    from .helper_function.hf_file import snapshot, mkdir
+    from .helper_function.hf_string import list_to_attr_code
+    from .helper_function.hf_db import export_xl
+else:
+    from sys_init import *
+    from helper_function.wrappers import sub_wrapper
+    from helper_function.hf_file import snapshot, mkdir
+    from helper_function.hf_string import list_to_attr_code
+    from helper_function.hf_db import export_xl
 
 
 @sub_wrapper(SYS_MODE)
@@ -112,7 +118,7 @@ def snapshot_database():
 
     for schema_tag in DB_SCHEMAS_INFO['schema_tag'].tolist():
         schema = get_schema(schema_tag=schema_tag)
-        folder = os.path.join(PATH_DB_SNAPSHOT, schema, dt.now().strftime('%Y%m%d_%H%M%S_%f'))
+        folder = os.path.join(PATH_DB_SNAPSHOT, dt.now().strftime('%Y%m%d_%H%M%S_%f'), schema)
         if not os.path.exists(folder):
             mkdir(folder)
 
@@ -126,10 +132,10 @@ def snapshot_database():
 
 @sub_wrapper(SYS_MODE)
 def create_tables():
-    exec('import meta_files.models')
+    exec('from .meta_files import models')
     engine = create_engine(DB_URL)
     print("creating tables")
-    exec('meta_files.models.Base.metadata.create_all(engine)')
+    exec('models.Base.metadata.create_all(engine)')
     print("tables created")
 
 

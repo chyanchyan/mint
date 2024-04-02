@@ -2,7 +2,11 @@
 from sqlalchemy import Integer, Column, Date, DateTime, \
     Float, ForeignKey, String, TEXT, func, BLOB, DECIMAL
 from sqlalchemy.orm import declarative_base
-from sys_init import *
+if 'mint' in __name__.split('.'):
+    from ..sys_init import *
+else:
+    from mint.sys_init import *
+
 
 Base = declarative_base()
 
