@@ -4,12 +4,11 @@ from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.cell import Cell
+import pandas as pd
 
 if 'mint' in __name__.split('.'):
-    from .sys_init import *
     from .tree import DataTree
 else:
-    from sys_init import *
     from tree import DataTree
 
 

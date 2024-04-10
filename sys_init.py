@@ -99,12 +99,15 @@ def refresh_db_info():
     DB_TABLES_INFO = pd.read_sql(sql=f'select * from tables', con=DB_ENGINE_CORE)
     DB_COLS_INFO = pd.read_sql(sql=f'select * from cols', con=DB_ENGINE_CORE)
     DB_SCHEMAS_INFO['schema'] = DB_SCHEMAS_INFO['schema_tag'].apply(
-        lambda x: f'{PROJECT_NAME}_{x}_{SYS_MODE}'
+        lambda x: get_schema(x)
     )
 
 
 def get_schema(schema_tag):
-    return f'{PROJECT_NAME}_{schema_tag}_{SYS_MODE}'
+    if SYS_MODE == 'PROD':
+        return f'{PROJECT_NAME}_{schema_tag}'
+    else:
+        return f'{PROJECT_NAME}_{schema_tag}_{SYS_MODE}'
 
 
 PATH_ROOT = os.path.dirname(__file__)
@@ -149,8 +152,8 @@ DB_PASSWORD = CONF_ADMIN.get(SYS_MODE, 'db_password')
 DB_TYPE = CONF_CONF.get(SYS_MODE, 'db_type')
 DB_CHARSET = CONF_CONF.get(SYS_MODE, 'db_charset')
 
-
 DB_SCHEMA_CORE = get_schema('core')
+print(DB_SCHEMA_CORE)
 DB_ENGINE_CORE, DB_CON_CORE, DB_URL_CORE = connect_db(
     db_type=DB_TYPE,
     username=DB_USERNAME,
@@ -161,15 +164,27 @@ DB_ENGINE_CORE, DB_CON_CORE, DB_URL_CORE = connect_db(
     charset=DB_CHARSET
 )
 
-DB_SCHEMA_TAGS = pd.read_sql(
-    f'select schema_tag from {get_schema("core")}.schemas',
-    con=DB_ENGINE_CORE
-)['schema_tag'].tolist()
+try:
+    DB_SCHEMA_TAGS = pd.read_sql(
+        f'select schema_tag from {get_schema("core")}.schemas',
+        con=DB_ENGINE_CORE
+    )['schema_tag'].tolist()
+except sqlalchemy.exc.ProgrammingError as e:
+    if e.orig.args[0] == 1146:
+        print(e.args)
+        print('creating...')
+        refresh_table_info_to_db()
+        DB_SCHEMA_TAGS = pd.read_sql(
+            f'select schema_tag from {get_schema("core")}.schemas',
+            con=DB_ENGINE_CORE
+        )['schema_tag'].tolist()
+
 
 DB_SCHEMAS = {}
 DB_ENGINES = {}
 DB_CONS = {}
 DB_URLS = {}
+
 for TAG in DB_SCHEMA_TAGS:
     DB_SCHEMAS[TAG] = get_schema(schema_tag=TAG)
     DB_ENGINES[TAG], DB_CONS[TAG], DB_URLS[TAG] = connect_db(

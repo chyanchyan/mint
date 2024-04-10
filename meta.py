@@ -28,8 +28,7 @@ def drop_schemas(schema_tags=None):
     session = session_class()
 
     for schema_tag in schema_tags:
-        schema = f'{PROJECT_NAME}_{schema_tag}_{SYS_MODE}'
-        drop_schema(session=session, schema=schema)
+        drop_schema(session=session, schema=DB_SCHEMAS[schema_tag])
     session.commit()
     session.close()
 
@@ -111,14 +110,17 @@ def refresh_models():
     f.close()
 
 
-def snapshot_database():
-
+def snapshot_database(comments=''):
+    folder = dt.now().strftime('%Y%m%d_%H%M%S_%f') + f'-{comments}'
     if not os.path.exists(PATH_DB_SNAPSHOT):
         mkdir(PATH_DB_SNAPSHOT)
 
-    for schema_tag in DB_SCHEMAS_INFO['schema_tag'].tolist():
-        schema = get_schema(schema_tag=schema_tag)
-        folder = os.path.join(PATH_DB_SNAPSHOT, dt.now().strftime('%Y%m%d_%H%M%S_%f'), schema)
+    for schema in DB_SCHEMAS.values():
+        folder = os.path.join(
+            PATH_DB_SNAPSHOT,
+            folder,
+            schema
+        )
         if not os.path.exists(folder):
             mkdir(folder)
 
@@ -178,4 +180,4 @@ def add_table():
 
 
 if __name__ == '__main__':
-    add_table()
+    restore_sys()

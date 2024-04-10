@@ -2,12 +2,12 @@ import re
 import pandas as pd
 
 if 'mint' in __name__.split('.'):
-    from ..sys_init import SYS_MODE, PROJECT_NAME
+    from ..sys_init import DB_SCHEMAS
     from ..helper_function.hf_number import is_number
     from ..helper_function.hf_data import JsonObj
     from ..helper_function.hf_string import dash_name_to_camel
 else:
-    from mint.sys_init import SYS_MODE, PROJECT_NAME
+    from mint.sys_init import DB_SCHEMAS
     from mint.helper_function.hf_number import is_number
     from mint.helper_function.hf_data import JsonObj
     from mint.helper_function.hf_string import dash_name_to_camel
@@ -79,8 +79,9 @@ class MetaColumn(JsonObj):
     def to_model_code(self):
         if not pd.isna(self.foreign_key):
             fk_schema_tag, fk_table, fk_col = self.foreign_key.split('.')
+            fk_schema = DB_SCHEMAS[fk_schema_tag]
             s_fk = ', '.join([
-                'f\'{PROJECT_NAME}_%s_{SYS_MODE}.%s.%s\'' % (fk_schema_tag, fk_table, fk_col),
+                'f\'%s.%s.%s\'' % (fk_schema, fk_table, fk_col),
                 'ondelete=\'%s\'' % self.fk_on_delete,
                 'onupdate=\'%s\'' % self.fk_on_update
             ])
@@ -112,7 +113,7 @@ class MetaColumn(JsonObj):
             s_default = None
 
         if not pd.isna(self.server_default):
-            if self.server_default[-2:] == '()':
+            if isinstance(self.server_default, str) and self.server_default[-2:] == '()':
                 s_server_default = f'server_default={str(self.server_default)}'
             else:
                 s_server_default = f"server_default='{str(self.server_default)}'"
@@ -171,16 +172,17 @@ class MetaTable(JsonObj):
         else:
             # table attr start
             self.table_name = table_info['table_name']
-            self.comment = table_info['comment']
+            self.label = table_info['label']
             self.schema_tag = table_info['schema_tag']
             self.ancestors = table_info['ancestors']
-            self.naming_from = table_info['naming_from']
+            self.auto_name_param = table_info['auto_name_param']
             self.web_list_index = table_info['web_list_index']
+            self.comment = table_info['comment']
             # table attr end
             if pd.isna(self.schema_tag):
                 self.schema = None
             else:
-                self.schema = f'{PROJECT_NAME}_{self.schema_tag}_{SYS_MODE}'
+                self.schema = DB_SCHEMAS[self.schema_tag]
             self.cols_info = cols_info
             self.cols = {
                 col_info['col_name']: MetaColumn(table_info=table_info, col_info=col_info, order=i)

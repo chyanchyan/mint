@@ -11,7 +11,7 @@ if 'mint' in __name__.split('.'):
     from .helper_function.hf_string import udf_format, to_json_obj, to_json_str
     from .helper_function.hf_file import mkdir, get_last_snapshot_timestamp
     from .helper_function.hf_xl import migration_pandas
-    from .helper_function.hf_db import df_to_db, export_xl
+    from .helper_function.hf_db import df_to_db
     from .helper_function.hf_func import profile_line_by_line
 else:
     from sys_init import *
@@ -19,35 +19,12 @@ else:
     from helper_function.hf_string import udf_format, to_json_obj, to_json_str
     from helper_function.hf_file import mkdir, get_last_snapshot_timestamp
     from helper_function.hf_xl import migration_pandas
-    from helper_function.hf_db import df_to_db, export_xl
+    from helper_function.hf_db import df_to_db
     from helper_function.hf_func import profile_line_by_line
     from tree import DataTree, Tree, get_cst_pki, get_booking_sequence
     from booking_xl_sheet import render_booking_xl_sheet
 
 TABLES = get_tables(tables_info=DB_TABLES_INFO, cols_info=DB_COLS_INFO)
-
-
-def snapshot_database(comments=''):
-
-    if not os.path.exists(PATH_DB_SNAPSHOT):
-        mkdir(PATH_DB_SNAPSHOT)
-
-    for schema_tag in DB_SCHEMAS_INFO['schema_tag'].tolist():
-        schema = get_schema(schema_tag=schema_tag)
-        folder = os.path.join(
-            PATH_DB_SNAPSHOT,
-            dt.now().strftime('%Y%m%d_%H%M%S_%f') + f'-{comments}',
-            schema
-        )
-        if not os.path.exists(folder):
-            mkdir(folder)
-
-        export_xl(
-            output_folder=folder,
-            con=DB_ENGINE,
-            schema=schema,
-            table_names=None
-        )
 
 
 def migrate_data_from_xl_folder(
@@ -483,20 +460,12 @@ def xl_sheet_to_dtree(root, file_path):
     return dtree
 
 
-def migrate_from_xlsx(folder=None):
-    if folder is None:
-        parent_folder = os.path.join(PATH_DB_SNAPSHOT, 'mint_data_TEST')
-        last_time_stamp = get_last_snapshot_timestamp(parent_folder)
-        folder = os.path.join(parent_folder, last_time_stamp)
-
-    schemas = [
-        get_schema(schema_tag=schema_tag)
-        for schema_tag in DB_SCHEMAS_INFO['schema_tag'].tolist()
-    ]
-    cst_pki = get_cst_pki(con=DB_ENGINE, schemas=schemas)
+def migrate_from_xlsx(folder):
+    cst_pki = get_cst_pki(con=DB_ENGINE, schemas=DB_SCHEMAS.values())
     booking_sequence = get_booking_sequence(cst_pki=cst_pki)
 
-    for schema in schemas:
+    for schema_tag in DB_SCHEMA_TAGS:
+        schema = DB_SCHEMAS[schema_tag]
         schema_folder = os.path.join(folder, schema)
         migrate_data_from_xl_folder(
             folder=schema_folder,
@@ -511,4 +480,5 @@ def test_tree():
 
 
 if __name__ == '__main__':
-    pass
+    folder = r'D:\projects\vision6\snapshots\db\20240411_043440_401576_test_to_prod'
+    migrate_from_xlsx(folder=folder)
