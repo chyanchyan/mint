@@ -1,5 +1,6 @@
 import json
-from flask import Flask, jsonify, request
+import os
+from flask import Flask, jsonify, request, send_file
 from flask_cors import CORS
 
 if 'mint' in __name__.split('.'):
@@ -16,6 +17,7 @@ CORS(app=app)
 def get_in_json_obj(req):
     data_bytes = req.get_data()
     data_str = data_bytes.decode()
+    print(f'data str: {data_str}')
     in_json_obj = json.loads(data_str)
     print(to_json_str(in_json_obj))
     return in_json_obj
@@ -27,9 +29,23 @@ def api_health():
     return {}
 
 
+@app.route('/api/fileDownload/<file_path>', methods=['get', 'post'])
+def api_file_download(file_path):
+    file_path_list = file_path.split('>')
+    file_path = f'{os.path.sep}'.join(file_path_list)
+    print(file_path)
+    return send_file(file_path, as_attachment=True)
+
+
 @app.route('/api/hello', methods=['GET', 'POST'])
 @api_status_wrapper
 def api_hello():
     in_json_obj = get_in_json_obj(request)
     username = in_json_obj['username']
     return f'Hello, {username}'
+
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=8083, debug=True)
+
+

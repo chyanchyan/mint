@@ -445,7 +445,6 @@ class DataTree(Tree):
 
     def from_sql(
             self,
-            con=None,
             index_col: str = None,
             index_values: Set[str] = (),
             limit=None,
@@ -465,10 +464,10 @@ class DataTree(Tree):
             limit_offset_str = f'limit {str(limit)} offset {str(offset)}'
 
         sql = f'SELECT * FROM {root_schema}.{self.root} {where_str} {limit_offset_str}'
-        root_data = pd.read_sql(sql=sql, con=con, index_col=self.pk)
+        root_data = pd.read_sql(sql=sql, con=self.con, index_col=self.pk)
         if len(root_data) == 0:
             print(f'empty result for root: "{self.root}" \n'
-                  f'with index field: "{where_str}" \n'
+                  f'with index col: "{where_str}" \n'
                   f'with values in {index_values}')
             relevant_data_set = dict(zip(
                 self.node_names,
@@ -492,15 +491,15 @@ class DataTree(Tree):
                 where_str_list = []
                 if node_name not in values_map:
                     continue
-                for field, tree_values in values_map[node_name].items():
+                for col, tree_values in values_map[node_name].items():
                     values = tree_values['values']
 
-                    # has no value by field
+                    # has no value by col
                     if len(values) == 0:
                         continue
 
                     values_str = ', '.join(['"%s"' % value.replace('%', '%%') for value in values])
-                    where_str = f'(`{field}` in ({values_str}))'
+                    where_str = f'(`{col}` in ({values_str}))'
                     where_str_list.append(where_str)
 
                 # has no value in table
@@ -510,10 +509,10 @@ class DataTree(Tree):
                 all_where_str = ' or '.join(where_str_list)
 
                 sql = f'SELECT * FROM {self.tables[node_name].schema}.{node_name} WHERE {all_where_str}'
-                data = pd.read_sql(sql=sql, con=con, index_col='id')
+                data = pd.read_sql(sql=sql, con=self.con, index_col='id')
                 relevant_data_set[node_name] = data
 
-                for field, tree_values in values_map[node_name].items():
+                for col, tree_values in values_map[node_name].items():
                     values_map = self.update_values_map(
                         values_map=values_map,
                         tree=tree_values['tree'],
@@ -560,18 +559,18 @@ class DataTree(Tree):
                     continue
                 where_str_list = []
                 data = pd.DataFrame(columns=self.table.cols.keys())
-                for field, tree_values in values_map[node_name].items():
+                for col, tree_values in values_map[node_name].items():
                     values = tree_values['values']
                     values_str = ', '.join(['"%s"' % value for value in values])
                     data = relevant_data_set_copy[node_name]
-                    where_str = f'(data["{field}"].isin([{values_str}]))'
+                    where_str = f'(data["{col}"].isin([{values_str}]))'
                     where_str_list.append(where_str)
 
                 all_where_str = ' | '.join(where_str_list)
 
                 relevant_data_set_copy[node_name] = eval(f'data[{all_where_str}]')
 
-                for field, tree_values in values_map[node_name].items():
+                for col, tree_values in values_map[node_name].items():
                     values_map = self.update_values_map(
                         values_map=values_map,
                         tree=tree_values['tree'],
@@ -676,7 +675,7 @@ class DataTree(Tree):
         col_items = [
             item for item in self.table.cols.items()
             if not pd.isna(item[1].web_list_order)
-            and not item[1].field == ignore_ref_col
+            and not item[1].col_name == ignore_ref_col
         ]
         col_items.sort(key=lambda x: x[1].web_list_order)
         display_column_names, display_columns = zip(*col_items)
@@ -684,8 +683,8 @@ class DataTree(Tree):
         columns = [
             {
                 'key': i,
-                'dataIndex': col.field,
-                'title': col.web_label,
+                'dataIndex': col.col_name,
+                'title': col.label,
                 'dataType': col.data_type
             } for i, col in enumerate(display_columns)
         ]
@@ -730,7 +729,7 @@ class DataTree(Tree):
         col_items = [
             item for item in self.table.cols.items()
             if not pd.isna(item[1].web_list_order)
-            and item[1].field != parent_ref
+            and item[1].col_name != parent_ref
         ]
         col_items.sort(key=lambda x: x[1].web_list_order)
         display_column_names, display_columns = zip(*col_items)
@@ -738,8 +737,8 @@ class DataTree(Tree):
         columns = [
             {
                 'key': i,
-                'dataIndex': col.field,
-                'title': col.web_label,
+                'dataIndex': col.col_name,
+                'title': col.label,
                 'dataType': col.data_type
             } for i, col in enumerate(display_columns)
         ]
@@ -781,7 +780,7 @@ class DataTree(Tree):
 
         return res
 
-    def get_all_parents_with_full_value(self, con):
+    def get_all_parents_with_full_value(self):
         res = {}
         all_parents = self.get_all_parents()
         for p_name, p in all_parents.items():
@@ -790,13 +789,13 @@ class DataTree(Tree):
                 tables=self.tables,
                 tree=p
             )
-            dp.from_sql(con=con)
+            dp.from_sql()
             res[p.root] = dp
         return res
 
-    def get_parents_select_values(self, con):
+    def get_parents_select_values(self):
         res = {}
-        all_parents = self.get_all_parents_with_full_value(con=con)
+        all_parents = self.get_all_parents_with_full_value()
         for p_name, p in all_parents.items():
             try:
                 res[p.root] = p.data[p.reffed].to_list()
@@ -839,8 +838,8 @@ class DataTree(Tree):
             # mark child auto-name
             naming_cols = sorted([
                 col_obj for col_name, col_obj in child.table.cols.items()
-                if not pd.isna(col_obj.naming_field_order)
-            ], key=lambda x: x.naming_field_order)
+                if not pd.isna(col_obj.naming_col_order)
+            ], key=lambda x: x.naming_col_order)
             if len(naming_cols) > 0:
                 child_df['name'] = child_df.apply(
                     lambda x: '-'.join([
@@ -874,22 +873,22 @@ class DataTree(Tree):
             )
 
             # mark auto name
-            naming_fields = [(col_name, col.naming_field_order)
+            naming_cols = [(col_name, col.naming_col_order)
                              for col_name, col in parent.table.cols.items()
-                             if not pd.isna(col.naming_field_order)]
-            if len(naming_fields) > 0:
-                naming_fields = [field for field, order in sorted(naming_fields, key=lambda x: x[1])]
+                             if not pd.isna(col.naming_col_order)]
+            if len(naming_cols) > 0:
+                naming_cols = [col for col, order in sorted(naming_cols, key=lambda x: x[1])]
 
                 if len(parent_df) > 0:
                     if 'name' in parent_df.columns:
                         parent_df['name'] = parent_df.apply(
-                            lambda x: '-'.join([x[field] for field in naming_fields]) if pd.isna(x['name']) else x[
+                            lambda x: '-'.join([x[col] for col in naming_cols]) if pd.isna(x['name']) else x[
                                 'name'],
                             axis=1
                         )
                     else:
                         parent_df['name'] = parent_df.apply(
-                            lambda x: '-'.join([x[field] for field in naming_fields]),
+                            lambda x: '-'.join([x[col] for col in naming_cols]),
                             axis=1
                         )
 
@@ -900,7 +899,7 @@ class DataTree(Tree):
 
         self.from_relevant_data_set(relevant_data_set=relevant_data_set)
 
-    def to_excel_sheets(self, pth, node_names=None, web_visible_only=False, web_label=False, table_web_label=False):
+    def to_excel_sheets(self, pth, node_names=None, web_visible_only=False, label=False, table_label=False):
         writer = ExcelWriter(pth, mode='w', engine='openpyxl', options={'strings_to_urls': False})
         if not node_names:
             node_names = self.node_names
@@ -910,14 +909,14 @@ class DataTree(Tree):
             table = self.tables[node_name]
             if web_visible_only:
                 columns = [
-                    col.field
+                    col.col_name
                     for col in table.cols.values()
                     if col.web_visible == 1
                 ]
 
             else:
                 columns = [
-                    col.field
+                    col.col_name
                     for col in table.cols.values()
                     if col.web_visible == 1
                 ]
@@ -927,14 +926,14 @@ class DataTree(Tree):
             except KeyError:
                 df = pd.DataFrame(columns=columns)
 
-            if web_label:
+            if label:
                 column_mapper = dict(
                     [
-                        (col.field, col.web_label)
+                        (col.col_name, col.label)
                         for col in table.cols.values()]
                 )
                 df.rename(columns=column_mapper, inplace=True)
-            if table_web_label:
+            if table_label:
                 node_name = table.label
 
             df.to_excel(writer, sheet_name=node_name, index=False,
@@ -958,7 +957,7 @@ class DataTree(Tree):
         pin = 1
         for r, (key, value) in enumerate(self.data.items()):
             if self.table.cols[key].web_visible == 1:
-                ws.cell(row=pin, column=1).value = self.table.cols[key].web_label
+                ws.cell(row=pin, column=1).value = self.table.cols[key].label
                 ws.cell(row=pin, column=2).value = value
                 pin += 1
 
@@ -970,7 +969,7 @@ class DataTree(Tree):
             c_index = 1
             for c, (col, value) in enumerate(child_values.items()):
                 if self.tables[child_name].cols[col].web_visible == 1:
-                    ws.cell(row=pin, column=c_index).value = self.tables[child_name].cols[col].web_label
+                    ws.cell(row=pin, column=c_index).value = self.tables[child_name].cols[col].label
                     c_index += 1
             pin += 1
             c_index = 1

@@ -109,9 +109,12 @@ def fill_table(
             if table.cols[col_name].web_visible
         ], key=lambda x: table.cols[x].order)
 
-    col_list = [col_name for col_name in col_list
-                if not table.cols[col_name].foreign_key or
-                table.cols[col_name].foreign_key.split('.')[1] != root]
+    col_list = [
+        col_name for col_name in col_list
+        if not table.cols[col_name].foreign_key or
+           pd.isna(table.cols[col_name].foreign_key) or
+           table.cols[col_name].foreign_key.split('.')[1] != root
+    ]
 
     # fill table label
     apply_cell_format(
@@ -131,7 +134,7 @@ def fill_table(
         col_obj = table.cols[col_name]
         col_label = ['*', ''][col_obj.nullable == 1 and col_obj.foreign_key is None] + col_obj.label
         # cell validation
-        if col_obj.foreign_key:
+        if col_obj.foreign_key and not pd.isna(col_obj.foreign_key):
             db_name, parent_table_name, fk = col_obj.foreign_key.split('.')
             if parent_table_name == root:
                 continue
@@ -159,7 +162,7 @@ def fill_table(
             cell_col = ws_booking.cell(row=dst_row + col_idx, column=dst_col + 3, value=col_label)
             ws_booking.cell(row=dst_row + col_idx, column=dst_col + 2, value=col_obj.col_name)
             cell_default = ws_booking.cell(row=dst_row + col_idx, column=dst_col + 4, value=col_obj.default)
-            if col_obj.foreign_key:
+            if col_obj.foreign_key and not pd.isna(col_obj.foreign_key):
                 db_name, foreign_table, foreign_key = col_obj.foreign_key.split('.')
                 ws_booking.cell(
                     row=dst_row + col_idx,
@@ -173,7 +176,7 @@ def fill_table(
             cell_col = ws_booking.cell(row=dst_row, column=dst_col + col_idx + 3, value=col_label)
             ws_booking.cell(row=dst_row + 1, column=dst_col + col_idx + 3, value=col_obj.col_name)
             cell_default = ws_booking.cell(row=dst_row + 2, column=dst_col + col_idx + 3, value=col_obj.default)
-            if col_obj.foreign_key:
+            if col_obj.foreign_key and not pd.isna(col_obj.foreign_key):
                 db_name, foreign_table, foreign_key = col_obj.foreign_key.split('.')
                 ws_booking.cell(
                     row=dst_row - 1,
@@ -233,7 +236,7 @@ def fill_table(
         )
 
         # cell validation
-        if col_obj.foreign_key:
+        if col_obj.foreign_key and not pd.isna(col_obj.foreign_key):
             apply_data_validation(
                 sheet=ws_booking,
                 cell=cell_default,
@@ -254,7 +257,7 @@ def render_booking_xl_sheet(output_path, template_path, data_tree: DataTree, con
 
     tables = data_tree.tables
     root = data_tree.root
-    select_values = data_tree.get_parents_select_values(con=con)
+    select_values = data_tree.get_parents_select_values()
 
     shutil.copy(template_path, output_path)
     wb = load_workbook(output_path, keep_vba=True)
@@ -277,7 +280,7 @@ def render_booking_xl_sheet(output_path, template_path, data_tree: DataTree, con
     value_row_index = 0
 
     # fill parent tables
-    parents_trees = data_tree.get_all_parents_with_full_value(con=con)
+    parents_trees = data_tree.get_all_parents_with_full_value()
     for parent_name, parent in parents_trees.items():
         ws_parent_booking = wb.copy_worksheet(wb['bks_root'])
         ws_parent_booking.title = 'bks_' + parent.table.label

@@ -132,7 +132,10 @@ def snapshot_database():
 
 @sub_wrapper(SYS_MODE)
 def create_tables():
-    exec('from .meta_files import models')
+    if 'mint' in __name__.split('.'):
+        exec('from meta_files import models')
+    else:
+        exec('from mint.meta_files import models')
     engine = create_engine(DB_URL)
     print("creating tables")
     exec('models.Base.metadata.create_all(engine)')
@@ -141,7 +144,7 @@ def create_tables():
 
 @sub_wrapper(SYS_MODE)
 def restore_sys():
-    drop_schemas(['data'])
+    drop_schemas()
     refresh_table_info_to_db()
     refresh_db_info()
     snapshot_table_obj()
@@ -175,4 +178,4 @@ def add_table():
 
 
 if __name__ == '__main__':
-    snapshot_database()
+    add_table()

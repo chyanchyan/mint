@@ -6,7 +6,6 @@ import shutil
 import configparser
 import traceback
 
-import pandas as pd
 import pymysql
 import sqlalchemy.exc
 from sqlalchemy import create_engine, inspect
@@ -47,6 +46,7 @@ def connect_db(db_type, username, password, host, port, schema, charset, create_
                 print(e)
                 raise e
         else:
+            print(url)
             print('bugs in db url')
             traceback.format_exc()
             print(e)
@@ -108,11 +108,19 @@ def get_schema(schema_tag):
 
 
 PATH_ROOT = os.path.dirname(__file__)
-PATH_PROJECT =  os.path.dirname(PATH_ROOT)
-PATH_ADMIN_INI = os.path.join(PATH_ROOT, 'admin.ini')
-PATH_CONFIG_INI = os.path.join(PATH_ROOT, 'config.ini')
+PATH_PROJECT = os.path.dirname(PATH_ROOT)
+
+PATH_ADMIN_INI = os.path.join(os.path.dirname(PATH_ROOT), 'admin.ini')
+if not os.path.exists(PATH_ADMIN_INI):
+    PATH_ADMIN_INI = os.path.join(PATH_ROOT, 'admin.ini')
+
+PATH_CONFIG_INI = os.path.join(os.path.dirname(PATH_ROOT), 'config.ini')
+if not os.path.exists(PATH_CONFIG_INI):
+    PATH_CONFIG_INI = os.path.join(PATH_ROOT, 'config.ini')
+
 PATH_SNAPSHOT = os.path.join(PATH_PROJECT, 'snapshots')
 PATH_OUTPUT = os.path.join(PATH_PROJECT, 'output')
+PATH_UPLOAD = os.path.join(PATH_PROJECT, 'upload')
 PATH_TABLE_INFO_SNAPSHOT = os.path.join(PATH_SNAPSHOT, 'table_info')
 PATH_META_SNAPSHOT = os.path.join(PATH_SNAPSHOT, 'meta')
 PATH_MODEL_SNAPSHOT = os.path.join(PATH_SNAPSHOT, 'models')
@@ -128,6 +136,7 @@ PROJECT_NAME = CONF_CONF.get('SYS', 'project_name')
 HOST_NAME = socket.gethostname()
 TEST_HOST_NAMES = CONF_ADMIN.get('SYS', 'test_host_names').split()
 
+print(f'host name: {HOST_NAME}')
 if HOST_NAME in TEST_HOST_NAMES:
     SYS_MODE = 'TEST'
 else:
@@ -142,7 +151,6 @@ DB_CHARSET = CONF_CONF.get(SYS_MODE, 'db_charset')
 
 
 DB_SCHEMA_CORE = get_schema('core')
-
 DB_ENGINE_CORE, DB_CON_CORE, DB_URL_CORE = connect_db(
     db_type=DB_TYPE,
     username=DB_USERNAME,

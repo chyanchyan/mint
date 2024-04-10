@@ -3,12 +3,11 @@ from copy import deepcopy
 from datetime import datetime as dt
 from typing import Literal
 
-from tree import DataTree, Tree, get_cst_pki, get_booking_sequence
-from booking_xl_sheet import render_booking_xl_sheet
-
 if 'mint' in __name__.split('.'):
     from .sys_init import *
     from .meta_files.table_objs import get_tables
+    from .tree import DataTree, Tree, get_cst_pki, get_booking_sequence
+    from .booking_xl_sheet import render_booking_xl_sheet
     from .helper_function.hf_string import udf_format, to_json_obj, to_json_str
     from .helper_function.hf_file import mkdir, get_last_snapshot_timestamp
     from .helper_function.hf_xl import migration_pandas
@@ -22,18 +21,24 @@ else:
     from helper_function.hf_xl import migration_pandas
     from helper_function.hf_db import df_to_db, export_xl
     from helper_function.hf_func import profile_line_by_line
+    from tree import DataTree, Tree, get_cst_pki, get_booking_sequence
+    from booking_xl_sheet import render_booking_xl_sheet
 
 TABLES = get_tables(tables_info=DB_TABLES_INFO, cols_info=DB_COLS_INFO)
 
 
-def snapshot_database():
+def snapshot_database(comments=''):
 
     if not os.path.exists(PATH_DB_SNAPSHOT):
         mkdir(PATH_DB_SNAPSHOT)
 
     for schema_tag in DB_SCHEMAS_INFO['schema_tag'].tolist():
         schema = get_schema(schema_tag=schema_tag)
-        folder = os.path.join(PATH_DB_SNAPSHOT, schema, dt.now().strftime('%Y%m%d_%H%M%S_%f'))
+        folder = os.path.join(
+            PATH_DB_SNAPSHOT,
+            dt.now().strftime('%Y%m%d_%H%M%S_%f') + f'-{comments}',
+            schema
+        )
         if not os.path.exists(folder):
             mkdir(folder)
 
@@ -91,7 +96,6 @@ def get_data_list(root, index_col=None, index_values=()):
     tree = Tree(con=DB_ENGINE, tables=TABLES, root=root, cst_pki=cst_pki)
     dtree = DataTree(tree=tree)
     dtree.from_sql(
-        con=DB_ENGINE,
         index_col=index_col,
         index_values=index_values
     )
@@ -134,7 +138,6 @@ def get_data_trees(root, index_col=None, index_values=()):
     tree = Tree(con=DB_ENGINE, tables=TABLES, root=root)
     dtree = DataTree(tree=tree)
     dtree.from_sql(
-        con=DB_ENGINE,
         index_col=index_col,
         index_values=index_values
     )
@@ -143,8 +146,8 @@ def get_data_trees(root, index_col=None, index_values=()):
 
 
 def get_tree_row(root, index_col, index_values):
-    data_tree = DataTree(root=root)
-    data_tree.from_sql(index_col=index_col, index_values=index_values, con=DB_ENGINE)
+    data_tree = DataTree(root=root, con=DB_ENGINES['data'], tables=TABLES)
+    data_tree.from_sql(index_col=index_col, index_values=index_values)
 
     return data_tree
 
@@ -152,8 +155,8 @@ def get_tree_row(root, index_col, index_values):
 # @profile_line_by_line
 def get_nested_values(root, limit=None, offset=None):
 
-    dtree = DataTree(root=root)
-    dtree.from_sql(con=DB_ENGINE, limit=limit, offset=offset)
+    dtree = DataTree(root=root, con=DB_ENGINES['data'], tables=TABLES)
+    dtree.from_sql(limit=limit, offset=offset)
     dtree.fill_na_with_none()
     json_obj = dtree.nested_values()
     json_obj['dataSource'][0].sort(key=lambda x: x['id'], reverse=True)
@@ -169,25 +172,25 @@ def get_booking_structure(in_json_obj):
     t_branch = Tree(con=DB_ENGINE, tables=TABLES)
     dtree = DataTree(con=DB_ENGINE, tables=TABLES, root=branch)
 
-    select_values = dtree.get_parents_select_values(con=DB_ENGINE)
+    select_values = dtree.get_parents_select_values()
 
     json_obj = {'field_structure': t_branch.json_obj, 'select_values': select_values}
 
     return json_obj
 
 
-def get_update_cols(in_json_obj):
-    
+def get_edit_cols(in_json_obj):
+
     root = in_json_obj['root']
-    index_col = in_json_obj['index_col']
-    index_value = in_json_obj['index_value']
+    index_col = 'id'
+    index_value = in_json_obj[index_col]
 
     tree_row = get_tree_row(root=root, index_col=index_col, index_values=[index_value])
 
-    t_branch = Tree(con=DB_ENGINE, tables=TABLES, root=root)
+    t_branch = Tree(con=DB_ENGINES['data'], tables=TABLES, root=root)
     dtree = DataTree(tree=t_branch)
 
-    select_values = dtree.get_parents_select_values(con=DB_ENGINE)
+    select_values = dtree.get_parents_select_values()
 
     json_obj = {'field_structure': tree_row.json_obj,
                 'select_values': select_values}
@@ -260,8 +263,7 @@ def mark_child_name(d_dfs, tree):
         root_data_tree = DataTree(tree=tree)
         root_data_tree.from_sql(
             index_col=name_ref_col.col_name,
-            index_values={root_df[name_ref_col.col_name].values[0]},
-            con=DB_ENGINE
+            index_values={root_df[name_ref_col.col_name].values[0]}
         )
         root_df['name'] = root_df.apply(
             lambda x: '-'.join([x[name_ref_col.col_name], tree.root, str(len(root_data_tree.data))]),
@@ -400,11 +402,11 @@ def dict_to_df(d):
     return df
 
 
-def file_upload(file, file_str, folder, timestamped=False):
+def file_upload(file, timestamped=False):
+    folder = os.path.join(PATH_UPLOAD, 'project_xl')
     filename = file.filename
     split_str = filename.split('.')
     filename_base, ext = '.'.join(split_str[:-1]), split_str[-1]
-    # sha_name = sha1(file_str).hexdigest()
     if not os.path.exists(folder):
         mkdir(folder)
     if timestamped:
@@ -447,7 +449,7 @@ def gen_booking_xl_sheet_file(root, row_id=''):
     timestamp = dt.now().strftime("%Y%m%d_%H%M%S_%f")
     dtree = DataTree(root=root, con=DB_ENGINES['data'], tables=TABLES)
     if row_id != "":
-        dtree.from_sql(index_col='id', index_values={row_id}, con=DB_ENGINE)
+        dtree.from_sql(index_col='id', index_values={row_id})
 
     template_path = os.path.join(PATH_ROOT, 'templates', 'booking_xl_template.xlsm')
     output_folder = os.path.join(PATH_ROOT, 'output', 'booking_xl_sheet')
