@@ -187,5 +187,6 @@ def add_table():
 
 
 def init_sys():
+    refresh_table_info_to_db()
     refresh_models()
     refresh_table_obj()
