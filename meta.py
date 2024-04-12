@@ -45,19 +45,21 @@ def drop_schema(session, schema):
 
 @sub_wrapper(SYS_MODE)
 def snapshot_table_obj():
-    file_path = os.path.join('meta_files/table_objs.py')
+    file_path = os.path.join(PATH_ROOT, 'meta_files/table_objs.py')
     snapshot(src_path=file_path, dst_folder=PATH_META_SNAPSHOT, auto_timestamp=True, comments='')
 
 
 @sub_wrapper(SYS_MODE)
 def snapshot_models():
-    file_path = os.path.join('meta_files/models.py')
+    file_path = os.path.join(PATH_ROOT, 'meta_files/models.py')
     snapshot(src_path=file_path, dst_folder=PATH_MODEL_SNAPSHOT, auto_timestamp=True, comments='')
 
 
 @sub_wrapper(SYS_MODE)
 def refresh_table_obj():
-    code = open('templates/table_objs_template.py', 'r').readlines()
+    template_pth = os.path.join(PATH_ROOT, 'templates/table_objs_template.py')
+    output_pth = os.path.join(PATH_ROOT, 'meta_files/table_objs.py')
+    code = open(template_pth, 'r').readlines()
 
     st_mark = ' ' * 8 + '# col attr start\n'
     ed_mark = ' ' * 8 + '# col attr end\n'
@@ -79,7 +81,7 @@ def refresh_table_obj():
         ed_mark=ed_mark,
         intent_blocks=3
     )
-    f = open('meta_files/table_objs.py', 'w')
+    f = open(output_pth, 'w')
     f.writelines(code)
     f.close()
 
@@ -87,13 +89,18 @@ def refresh_table_obj():
 @sub_wrapper(SYS_MODE)
 def refresh_models():
     # load models file template
-    f = open('templates/models_template.py', encoding='utf-8', mode='r')
+    template_pth = os.path.join(PATH_ROOT, 'templates/models_template.py')
+    output_pth = os.path.join(PATH_ROOT, 'meta_files/models.py')
+    f = open(template_pth, encoding='utf-8', mode='r')
     rs = f.readlines()
     st_str = '# table class start\n'
     ed_str = '# table class end\n'
     pre_block, post_block = rs[: rs.index(st_str) + 1], rs[rs.index(ed_str):]
 
-    exec('from meta_files.table_objs import get_tables')
+    if 'mint' in __name__.split('.'):
+        exec('from .meta_files.table_objs import get_tables')
+    else:
+        exec('from mint.table_objs import get_tables')
     tables = eval('get_tables(tables_info=DB_TABLES_INFO, cols_info=DB_COLS_INFO)')
     tables_list = [v for k, v in tables.items()]
     tables_list.sort(key=lambda x: x.order)
@@ -105,7 +112,7 @@ def refresh_models():
     res = pre_block + table_blocks + post_block
 
     # write to file
-    f = open(f'meta_files/models.py', encoding='utf-8', mode='w')
+    f = open(output_pth, encoding='utf-8', mode='w')
     f.writelines(res)
     f.close()
 
@@ -135,7 +142,7 @@ def snapshot_database(comments=''):
 @sub_wrapper(SYS_MODE)
 def create_tables():
     if 'mint' in __name__.split('.'):
-        exec('from meta_files import models')
+        exec('from .meta_files import models')
     else:
         exec('from mint.meta_files import models')
     engine = create_engine(DB_URL)
@@ -179,5 +186,6 @@ def add_table():
     create_tables()
 
 
-if __name__ == '__main__':
-    restore_sys()
+def init_sys():
+    refresh_models()
+    refresh_table_obj()

@@ -6,13 +6,14 @@ from typing import Literal
 if 'mint' in __name__.split('.'):
     from .sys_init import *
     from .meta_files.table_objs import get_tables
-    from .tree import DataTree, Tree, get_cst_pki, get_booking_sequence
-    from .booking_xl_sheet import render_booking_xl_sheet
     from .helper_function.hf_string import udf_format, to_json_obj, to_json_str
     from .helper_function.hf_file import mkdir, get_last_snapshot_timestamp
     from .helper_function.hf_xl import migration_pandas
     from .helper_function.hf_db import df_to_db
     from .helper_function.hf_func import profile_line_by_line
+    from .helper_function.hf_data import replace_nan_with_none
+    from .tree import DataTree, Tree, get_cst_pki, get_booking_sequence
+    from .booking_xl_sheet import render_booking_xl_sheet
 else:
     from sys_init import *
     from meta_files.table_objs import get_tables
@@ -21,6 +22,7 @@ else:
     from helper_function.hf_xl import migration_pandas
     from helper_function.hf_db import df_to_db
     from helper_function.hf_func import profile_line_by_line
+    from helper_function.hf_data import replace_nan_with_none
     from tree import DataTree, Tree, get_cst_pki, get_booking_sequence
     from booking_xl_sheet import render_booking_xl_sheet
 
@@ -171,6 +173,8 @@ def get_edit_cols(in_json_obj):
 
     json_obj = {'field_structure': tree_row.json_obj,
                 'select_values': select_values}
+
+    json_obj = replace_nan_with_none(json_obj)
 
     return json_obj
 
