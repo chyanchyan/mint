@@ -11,7 +11,7 @@ else:
     from helper_function.wrappers import api_status_wrapper
 
 app = Flask(__name__)
-CORS(app=app)
+CORS(app=app, supports_credentials=True)
 
 
 def get_in_json_obj(req):
