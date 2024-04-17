@@ -433,7 +433,7 @@ def gen_booking_xl_sheet_file(root, row_id=''):
         dtree.from_sql(index_col='id', index_values={row_id})
 
     template_path = os.path.join(PATH_ROOT, 'templates', 'booking_xl_template.xlsm')
-    output_folder = os.path.join(PATH_ROOT, 'output', 'booking_xl_sheet')
+    output_folder = os.path.join(PATH_OUTPUT, 'booking_xl_sheet')
     mkdir(output_folder)
     output_filename = f'booking_excel-{timestamp}.xlsm'
     output_path = os.path.join(
@@ -449,8 +449,8 @@ def gen_booking_xl_sheet_file(root, row_id=''):
     )
 
     return {
-        'file_path': output_path,
-        'file_name': output_filename,
+        'filePath': output_path,
+        'fileName': output_filename,
     }
 
 
