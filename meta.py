@@ -2,6 +2,8 @@ import os.path
 from datetime import datetime as dt
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import text, create_engine
+from copy import copy
+
 
 if 'mint' in __name__.split('.'):
     from .sys_init import *
@@ -117,16 +119,18 @@ def refresh_models():
     f.close()
 
 
-def snapshot_database(comments=''):
+def snapshot_database(schema_tags=None, comments=''):
+    if schema_tags is None:
+        schema_tags = copy(DB_SCHEMA_TAGS)
     folder = dt.now().strftime('%Y%m%d_%H%M%S_%f') + f'-{comments}'
     if not os.path.exists(PATH_DB_SNAPSHOT):
         mkdir(PATH_DB_SNAPSHOT)
 
-    for schema in DB_SCHEMAS.values():
+    for schema_tag in schema_tags:
         folder = os.path.join(
             PATH_DB_SNAPSHOT,
             folder,
-            schema
+            DB_SCHEMAS[schema_tag]
         )
         if not os.path.exists(folder):
             mkdir(folder)
@@ -134,7 +138,7 @@ def snapshot_database(comments=''):
         export_xl(
             output_folder=folder,
             con=DB_ENGINE,
-            schema=schema,
+            schema=DB_SCHEMAS[schema_tag],
             table_names=None
         )
 
@@ -172,8 +176,8 @@ def restore_table():
 
 
 @sub_wrapper(SYS_MODE)
-def restore_db():
-    drop_schemas(['data'])
+def restore_db(schema_tags=None):
+    drop_schemas(schema_tags)
     create_tables()
 
 
@@ -190,3 +194,5 @@ def init_sys():
     refresh_table_info_to_db()
     refresh_models()
     refresh_table_obj()
+
+

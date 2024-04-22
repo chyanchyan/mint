@@ -2,6 +2,7 @@ import os.path
 from copy import deepcopy
 from datetime import datetime as dt
 from typing import Literal
+from copy import copy
 
 if 'mint' in __name__.split('.'):
     from .sys_init import *
@@ -464,11 +465,14 @@ def xl_sheet_to_dtree(root, file_path):
     return dtree
 
 
-def migrate_from_xlsx(folder):
+def migrate_from_xlsx(folder, schema_tags=None):
     cst_pki = get_cst_pki(con=DB_ENGINE, schemas=DB_SCHEMAS.values())
     booking_sequence = get_booking_sequence(cst_pki=cst_pki)
 
-    for schema_tag in DB_SCHEMA_TAGS:
+    if schema_tags is None:
+        schema_tags = copy(DB_SCHEMA_TAGS)
+
+    for schema_tag in schema_tags:
         schema = DB_SCHEMAS[schema_tag]
         schema_folder = os.path.join(folder, schema)
         migrate_data_from_xl_folder(

@@ -5,10 +5,10 @@ from flask_cors import CORS
 
 if 'mint' in __name__.split('.'):
     from .helper_function.hf_string import to_json_str
-    from .helper_function.wrappers import api_status_wrapper
+    from .helper_function.wrappers import api_status_wrapper, sql_retry_wrapper
 else:
     from helper_function.hf_string import to_json_str
-    from helper_function.wrappers import api_status_wrapper
+    from helper_function.wrappers import api_status_wrapper, sql_retry_wrapper
 
 app = Flask(__name__)
 CORS(app=app, supports_credentials=True)
@@ -17,9 +17,7 @@ CORS(app=app, supports_credentials=True)
 def get_in_json_obj(req):
     data_bytes = req.get_data()
     data_str = data_bytes.decode()
-    print(f'data str: {data_str}')
     in_json_obj = json.loads(data_str)
-    print(to_json_str(in_json_obj))
     return in_json_obj
 
 
