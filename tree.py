@@ -838,8 +838,8 @@ class DataTree(Tree):
             # mark child auto-name
             naming_cols = sorted([
                 col_obj for col_name, col_obj in child.table.cols.items()
-                if not pd.isna(col_obj.naming_col_order)
-            ], key=lambda x: x.naming_col_order)
+                if not pd.isna(col_obj.naming_field_order)
+            ], key=lambda x: x.naming_field_order)
             if len(naming_cols) > 0:
                 child_df['name'] = child_df.apply(
                     lambda x: '-'.join([
@@ -873,9 +873,9 @@ class DataTree(Tree):
             )
 
             # mark auto name
-            naming_cols = [(col_name, col.naming_col_order)
+            naming_cols = [(col_name, col.naming_field_order)
                              for col_name, col in parent.table.cols.items()
-                             if not pd.isna(col.naming_col_order)]
+                             if not pd.isna(col.naming_field_order)]
             if len(naming_cols) > 0:
                 naming_cols = [col for col, order in sorted(naming_cols, key=lambda x: x[1])]
 
