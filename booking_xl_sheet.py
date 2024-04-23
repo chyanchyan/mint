@@ -92,11 +92,13 @@ def fill_table(
         values=None,
         is_selected_values=False,
         start_value_row_index=0,
-        show_display_name=True
+        show_non_display_name=False
 ):
 
+    parent_table_data_start_row = 8
+
     # get col list
-    if show_display_name:
+    if not show_non_display_name:
         col_list = sorted([
             col_name for col_name in table.cols
             if table.cols[col_name].web_visible or
@@ -110,9 +112,9 @@ def fill_table(
 
     col_list = [
         col_name for col_name in col_list
-        if not table.cols[col_name].foreign_key or
-           pd.isna(table.cols[col_name].foreign_key) or
-           table.cols[col_name].foreign_key.split('.')[1] != root
+        if not table.cols[col_name].foreign_key or  # 引用列为None，或
+           pd.isna(table.cols[col_name].foreign_key) or # 引用列为nan，或
+           table.cols[col_name].foreign_key.split('.')[1] != root   # 若为子表，非引用根表的列
     ]
 
     # fill table label
@@ -131,11 +133,18 @@ def fill_table(
     value_row_index = int(start_value_row_index)
     for col_idx, col_name in enumerate(col_list):
         col_obj = table.cols[col_name]
-        col_label = ['*', ''][col_obj.nullable == 1 and col_obj.foreign_key is None] + col_obj.label
+        is_nullable = (
+            col_obj.nullable == 1 and
+            (
+                col_obj.foreign_key is None or
+                pd.isna(col_obj.foreign_key)
+            )
+        )
+        col_label = ['*', ''][is_nullable] + col_obj.label
         # cell validation
         if col_obj.foreign_key and not pd.isna(col_obj.foreign_key):
             db_name, parent_table_name, fk = col_obj.foreign_key.split('.')
-            if parent_table_name == root:
+            if parent_table_name == root:   # 若为子表引用根表，则跳过
                 continue
             parent_table_obj = tables[parent_table_name]
             select_values_rows_count = len(select_values[parent_table_name])
@@ -154,8 +163,8 @@ def fill_table(
                 raise ValueError
             col_letter = get_column_letter(fk_idx)
 
-            formula1 = f'=bks_{parent_table_obj.label}!${col_letter}$8:' \
-                       f'${col_letter}${str(select_values_rows_count + 9)}'
+            formula1 = f'=bks_{parent_table_obj.label}!${col_letter}${parent_table_data_start_row}:' \
+                       f'${col_letter}${str(select_values_rows_count + parent_table_data_start_row + 1)}'
 
         if direction == 'vertical':
             cell_col = ws_booking.cell(row=dst_row + col_idx, column=dst_col + 3, value=col_label)
@@ -201,7 +210,7 @@ def fill_table(
                                 cell_target=cell_formats[col_obj.web_obj]
                             )
 
-                            if col_obj.foreign_key:
+                            if col_obj.foreign_key and not pd.isna(col_obj.foreign_key):
                                 apply_data_validation(sheet=ws_booking, cell=cell_value, col_obj=col_obj,
                                                       formula1=formula1)
 
@@ -296,7 +305,7 @@ def render_booking_xl_sheet(output_path, template_path, data_tree: DataTree, con
             direction='horizontal',
             values={parent.reffed: parent.data.reset_index().to_dict()[parent.reffed]},
             is_selected_values=True,
-            show_display_name=True
+            show_non_display_name=False
         )
 
         ws_parent_booking.row_dimensions[6].hidden = True
@@ -318,7 +327,7 @@ def render_booking_xl_sheet(output_path, template_path, data_tree: DataTree, con
         tables=tables,
         direction='vertical',
         values=data_tree.data.to_dict(orient='list'),
-        show_display_name=False
+        show_non_display_name=False
     )
 
     dst_row = ws_booking.max_row + 3
@@ -338,7 +347,7 @@ def render_booking_xl_sheet(output_path, template_path, data_tree: DataTree, con
             tables=tables,
             values=child.data.to_dict(),
             start_value_row_index=value_row_index,
-            show_display_name=False
+            show_non_display_name=True
         )
 
         # hide format row

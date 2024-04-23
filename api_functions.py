@@ -432,11 +432,14 @@ def gen_booking_xl_sheet_file(root, row_id=''):
     dtree = DataTree(root=root, con=DB_ENGINES['data'], tables=TABLES)
     if row_id != "":
         dtree.from_sql(index_col='id', index_values={row_id})
+        p_name = dtree.relevant_data_set[root]["name"].values[0]
+    else:
+        p_name = '录入模板'
 
     template_path = os.path.join(PATH_ROOT, 'templates', 'booking_xl_template.xlsm')
     output_folder = os.path.join(PATH_OUTPUT, 'booking_xl_sheet')
     mkdir(output_folder)
-    output_filename = f'booking_excel-{timestamp}.xlsm'
+    output_filename = f'booking_excel-{p_name}-{timestamp}.xlsm'
     output_path = os.path.join(
         output_folder,
         output_filename
@@ -487,6 +490,9 @@ def test_tree():
     t = Tree(con=DB_ENGINE, tables=TABLES, root='project')
 
 
+def test_gen_booking_sheet():
+    gen_booking_xl_sheet_file(root='project', row_id='816')
+
+
 if __name__ == '__main__':
-    folder = r'D:\projects\vision6\snapshots\db\20240411_043440_401576_test_to_prod'
-    migrate_from_xlsx(folder=folder)
+    test_gen_booking_sheet()
