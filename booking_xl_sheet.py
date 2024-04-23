@@ -169,7 +169,17 @@ def fill_table(
         if direction == 'vertical':
             cell_col = ws_booking.cell(row=dst_row + col_idx, column=dst_col + 3, value=col_label)
             ws_booking.cell(row=dst_row + col_idx, column=dst_col + 2, value=col_obj.col_name)
-            cell_default = ws_booking.cell(row=dst_row + col_idx, column=dst_col + 4, value=col_obj.default)
+            cell_default = ws_booking.cell(row=dst_row + col_idx, column=dst_col + 4)
+
+            if col_obj.table_name == 'auto_name':
+                auto_naming_cols = [(i, col) for i, col in enumerate(col_list) if not pd.isna(table.cols[col].naming_field_order)]
+                auto_naming_col_addrs = [f'E{dst_row + item[0]}' for item in auto_naming_cols]
+                default_value = '=' + '&"-"&'.join(auto_naming_col_addrs)
+                apply_cell_format(cell_default, cell_formats['auto_name'])
+            else:
+                default_value = col_obj.default
+            cell_default.value = default_value
+
             if col_obj.foreign_key and not pd.isna(col_obj.foreign_key):
                 db_name, foreign_table, foreign_key = col_obj.foreign_key.split('.')
                 ws_booking.cell(
@@ -180,10 +190,21 @@ def fill_table(
             if values:
                 if len(values[col_name]) > 0:
                     cell_default.value = values[col_name][0]
+
         elif direction == 'horizontal':
             cell_col = ws_booking.cell(row=dst_row, column=dst_col + col_idx + 3, value=col_label)
             ws_booking.cell(row=dst_row + 1, column=dst_col + col_idx + 3, value=col_obj.col_name)
-            cell_default = ws_booking.cell(row=dst_row + 2, column=dst_col + col_idx + 3, value=col_obj.default)
+            cell_default = ws_booking.cell(row=dst_row + 2, column=dst_col + col_idx + 3)
+
+            if col_obj.table_name == 'auto_name':
+                auto_naming_cols = [(i, col) for i, col in enumerate(col_list) if not pd.isna(table.cols[col].naming_field_order)]
+                auto_naming_col_addrs = [f'{get_column_letter(dst_col + item[0] + 3)}{dst_row + 2}' for item in auto_naming_cols]
+                default_value = '=' + '&"-"&'.join(auto_naming_col_addrs)
+                apply_cell_format(cell_default, cell_formats['auto_name'])
+            else:
+                default_value = col_obj.default
+            cell_default.value = default_value
+
             if col_obj.foreign_key and not pd.isna(col_obj.foreign_key):
                 db_name, foreign_table, foreign_key = col_obj.foreign_key.split('.')
                 ws_booking.cell(
@@ -218,6 +239,8 @@ def fill_table(
                                 apply_radio_validation(
                                     sheet=ws_booking, cell=cell_value
                                 )
+                            if col_obj.table_name == 'auto_name':
+                                apply_cell_format(cell_value, cell_formats['auto_name'])
 
                             value_row_index += 1
                 except KeyError:
@@ -226,14 +249,22 @@ def fill_table(
         else:
             raise ValueError
 
-        apply_cell_format(
-            cell_src=cell_col,
-            cell_target=cell_formats['column'])
-
-        apply_cell_format(
-            cell_src=cell_default,
-            cell_target=cell_formats[col_obj.web_obj]
-        )
+        if col_obj.table_name == 'auto_name':
+            apply_cell_format(
+                cell_src=cell_col,
+                cell_target=cell_formats['auto_name'])
+            apply_cell_format(
+                cell_src=cell_default,
+                cell_target=cell_formats['auto_name']
+            )
+        else:
+            apply_cell_format(
+                cell_src=cell_col,
+                cell_target=cell_formats['column'])
+            apply_cell_format(
+                cell_src=cell_default,
+                cell_target=cell_formats[col_obj.web_obj]
+            )
 
         # cell conditional format
         apply_conditional_format(
