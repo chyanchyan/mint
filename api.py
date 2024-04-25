@@ -2,6 +2,7 @@ import json
 import os
 from flask import Flask, jsonify, request, send_file
 from flask_cors import CORS
+import urllib.parse
 
 if 'mint' in __name__.split('.'):
     from .helper_function.hf_string import to_json_str
@@ -30,10 +31,14 @@ def api_health():
 @app.route('/api/fileDownload/<file_path>', methods=['get', 'post'])
 def api_file_download(file_path):
     file_path_list = file_path.split('>')
+    file_name = file_path_list[-1]
     file_path = f'{os.path.sep}'.join(file_path_list)
-    print(file_path)
-    return send_file(file_path, as_attachment=True)
 
+    encoded_file_name = urllib.parse.quote(file_name)
+    print(file_path)
+    res = send_file(file_path, as_attachment=True)
+    res.headers['Content-Disposition'] = 'attachment; filename*=UTF-8\'\'{}'.format(encoded_file_name)
+    return res
 
 @app.route('/api/hello', methods=['GET', 'POST'])
 @api_status_wrapper
