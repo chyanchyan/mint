@@ -441,7 +441,7 @@ def gen_booking_xl_sheet_file(root, row_id=''):
     template_path = os.path.join(PATH_ROOT, 'templates', 'booking_xl_template.xlsm')
     output_folder = os.path.join(PATH_OUTPUT, 'booking_xl_sheet')
     mkdir(output_folder)
-    output_filename = f'booking_excel-{p_name}-{timestamp}.xlsm'
+    output_filename = f'booking_excel-{timestamp}.xlsm'
     output_path = os.path.join(
         output_folder,
         output_filename
