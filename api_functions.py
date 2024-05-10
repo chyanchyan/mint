@@ -387,13 +387,13 @@ def dict_to_df(d):
     return df
 
 
-def file_upload(file, timestamped=False):
-    folder = os.path.join(PATH_UPLOAD, 'project_xl')
+def file_upload(file, folder, timestamped=False):
+    dir_folder = os.path.join(PATH_UPLOAD, folder)
     filename = file.filename
     split_str = filename.split('.')
     filename_base, ext = '.'.join(split_str[:-1]), split_str[-1]
-    if not os.path.exists(folder):
-        mkdir(folder)
+    if not os.path.exists(dir_folder):
+        mkdir(dir_folder)
     if timestamped:
         name_ele = [
             filename_base,
@@ -404,7 +404,7 @@ def file_upload(file, timestamped=False):
             filename_base
         ]
     file_path = os.path.join(
-        folder,
+        dir_folder,
         '_'.join(name_ele)
     ) + '.' + ext
 
