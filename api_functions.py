@@ -180,11 +180,11 @@ def get_edit_cols(in_json_obj):
         charset=DB_CHARSET
     )
     t_branch = Tree(con=con, tables=TABLES, root=root)
-    con.close()
+
     dtree = DataTree(tree=t_branch)
 
     select_values = dtree.get_parents_select_values()
-
+    con.close()
     json_obj = {'field_structure': tree_row.json_obj,
                 'select_values': select_values}
 
