@@ -170,7 +170,17 @@ def get_edit_cols(in_json_obj):
 
     tree_row = get_tree_row(root=root, index_col=index_col, index_values=[index_value])
 
-    t_branch = Tree(con=DB_ENGINES['data'], tables=TABLES, root=root)
+    engine, con, url = connect_db(
+        db_type=DB_TYPE,
+        username=DB_USERNAME,
+        password=DB_PASSWORD,
+        host=DB_HOST,
+        port=DB_PORT,
+        schema=get_schema(schema_tag='data'),
+        charset=DB_CHARSET
+    )
+    t_branch = Tree(con=con, tables=TABLES, root=root)
+    con.close()
     dtree = DataTree(tree=t_branch)
 
     select_values = dtree.get_parents_select_values()
@@ -404,7 +414,7 @@ def file_upload(file, folder, timestamped=False):
             filename_base
         ]
     file_path = os.path.join(
-        dir_folder,
+        str(dir_folder),
         '_'.join(name_ele)
     ) + '.' + ext
 

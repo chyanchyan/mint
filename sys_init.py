@@ -57,12 +57,14 @@ def connect_db(db_type, username, password, host, port, schema, charset, create_
 
 def refresh_table_info_to_db():
 
-    table_info_path = os.path.join(PATH_ROOT, 'table_info.xlsx')
+    table_info_path = os.path.join(PATH_PROJECT, 'table_info.xlsx')
     if not os.path.exists(table_info_path):
-        shutil.copy(
-            src=os.path.join(PATH_ROOT, 'templates', 'table_info_template.xlsx'),
-            dst=table_info_path
-        )
+        table_info_path = os.path.join(PATH_ROOT, 'table_info.xlsx')
+        if not os.path.exists(table_info_path):
+            shutil.copy(
+                src=os.path.join(PATH_ROOT, 'templates', 'table_info_template.xlsx'),
+                dst=table_info_path
+            )
 
     schemas = pd.read_excel(
         table_info_path,
