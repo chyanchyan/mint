@@ -128,21 +128,30 @@ def get_data_trees(root, index_col=None, index_values=()):
     return dtree
 
 
-def get_tree_row(root, index_col, index_values):
-    data_tree = DataTree(root=root, con=DB_ENGINES['data'], tables=TABLES)
+def get_tree_row(root, index_col, index_values, con):
+    data_tree = DataTree(root=root, con=con, tables=TABLES)
     data_tree.from_sql(index_col=index_col, index_values=index_values)
-
     return data_tree
 
 
 # @profile_line_by_line
-def get_nested_values(root, limit=None, offset=None):
+def get_nested_values(
+        root,
+        limit=None,
+        offset=None,
+        index_col: str = None,
+        index_values=(),
+        full_detail=False,
+        **kwargs
+):
+    con = get_con('data')
+    dtree = DataTree(root=root, con=con, tables=TABLES)
+    dtree.from_sql(limit=limit, offset=offset, index_col=index_col, index_values=index_values)
 
-    dtree = DataTree(root=root, con=DB_ENGINES['data'], tables=TABLES)
-    dtree.from_sql(limit=limit, offset=offset)
     dtree.fill_na_with_none()
-    json_obj = dtree.nested_values()
+    json_obj = dtree.nested_values(full_detail=full_detail)
     json_obj['dataSource'][0].sort(key=lambda x: x['id'], reverse=True)
+    con.close()
 
     json_str = to_json_str(json_obj=json_obj)
     json_obj = to_json_obj(json_str=json_str)
@@ -168,28 +177,24 @@ def get_edit_cols(in_json_obj):
     index_col = 'id'
     index_value = in_json_obj[index_col]
 
-    tree_row = get_tree_row(root=root, index_col=index_col, index_values=[index_value])
-
-    engine, con, url = connect_db(
-        db_type=DB_TYPE,
-        username=DB_USERNAME,
-        password=DB_PASSWORD,
-        host=DB_HOST,
-        port=DB_PORT,
-        schema=get_schema(schema_tag='data'),
-        charset=DB_CHARSET
+    con = get_con('data')
+    tree_row = get_tree_row(
+        root=root,
+        index_col=index_col,
+        index_values=[index_value],
+        con=con
     )
+
     t_branch = Tree(con=con, tables=TABLES, root=root)
 
     dtree = DataTree(tree=t_branch)
 
     select_values = dtree.get_parents_select_values()
-    con.close()
+
     json_obj = {'field_structure': tree_row.json_obj,
                 'select_values': select_values}
 
     json_obj = replace_nan_with_none(json_obj)
-
     return json_obj
 
 

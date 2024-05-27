@@ -671,12 +671,18 @@ class DataTree(Tree):
         return self.json_obj_base(with_value=True)
 
     # @profile_line_by_line
-    def nested_values(self, ref_group=None, ignore_ref_col=None):
-        col_items = [
-            item for item in self.table.cols.items()
-            if not pd.isna(item[1].web_list_order)
-            and not item[1].col_name == ignore_ref_col
-        ]
+    def nested_values(self, ref_group=None, ignore_ref_col=None, full_detail=False):
+        if full_detail:
+            col_items = [
+                item for item in self.table.cols.items()
+                if not item[1].col_name == ignore_ref_col
+            ]
+        else:
+            col_items = [
+                item for item in self.table.cols.items()
+                if not pd.isna(item[1].web_list_order)
+                and not item[1].col_name == ignore_ref_col
+            ]
         col_items.sort(key=lambda x: x[1].web_list_order)
         display_column_names, display_columns = zip(*col_items)
         display_column_names = ['key'] + list(display_column_names)
@@ -692,6 +698,7 @@ class DataTree(Tree):
         data['id'] = data.index
         data.sort_index()
         display_data = data[display_column_names]
+
         if not ref_group:
             data_source = {0: display_data.to_dict(orient='records')}
         else:
@@ -710,7 +717,8 @@ class DataTree(Tree):
             }
             children[child.root] = child.nested_values(
                 ref_group=ref_group,
-                ignore_ref_col=child.ref
+                ignore_ref_col=child.ref,
+                full_detail=full_detail
             )
 
         res = {

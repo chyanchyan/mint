@@ -55,6 +55,20 @@ def connect_db(db_type, username, password, host, port, schema, charset, create_
     return engine, con, url
 
 
+def get_con(schema_tag):
+    engine, con, url = connect_db(
+        db_type=DB_TYPE,
+        username=DB_USERNAME,
+        password=DB_PASSWORD,
+        host=DB_HOST,
+        port=DB_PORT,
+        schema=get_schema(schema_tag=schema_tag),
+        charset=DB_CHARSET
+    )
+
+    return con
+
+
 def refresh_table_info_to_db():
 
     table_info_path = os.path.join(PATH_PROJECT, 'table_info.xlsx')
