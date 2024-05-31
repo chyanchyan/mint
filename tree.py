@@ -31,7 +31,9 @@ def get_cst_pki(con, schemas):
 def get_booking_sequence(cst_pki, root_nodes=None):
 
     relation_info = cst_pki[['TABLE_NAME', 'REFERENCED_TABLE_NAME']].values.tolist()
-
+    for item in relation_info:
+        print(item)
+    print('*' * 100)
     if root_nodes is not None:
         related_tables = set()
         graph = get_graph(relation_info=relation_info)
@@ -91,7 +93,7 @@ class Tree(JsonObj):
         self.con = con
         self.root = root
 
-        self.schemas = [table.schema for table in tables.values()]
+        self.schemas = list(set([table.schema for table in tables.values()]))
         if cst_pki is None:
             cst_pki = get_cst_pki(con=con, schemas=self.schemas)
         self.cst_pki = deepcopy(cst_pki)
@@ -127,14 +129,18 @@ class Tree(JsonObj):
                 (cst_pki['TABLE_NAME'] != self.root) &
                 (cst_pki['REFERENCED_TABLE_NAME'] != parent_root)
                 ]
-            parent = Tree(
-                con=con,
-                tables=self.tables,
-                root=parents_cst_row['REFERENCED_TABLE_NAME'],
-                cst_pki=parents_cst_pki,
-                ref=parent_ref,
-                reffed=parent_reffed
-            )
+            try:
+                parent = Tree(
+                    con=con,
+                    tables=self.tables,
+                    root=parents_cst_row['REFERENCED_TABLE_NAME'],
+                    cst_pki=parents_cst_pki,
+                    ref=parent_ref,
+                    reffed=parent_reffed
+                )
+            except KeyError:
+                print()
+                raise KeyError
             self.parents.append(parent)
 
         self.parents.sort(key=lambda x: self.tables[x.root].order)
