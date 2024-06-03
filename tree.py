@@ -31,9 +31,6 @@ def get_cst_pki(con, schemas):
 def get_booking_sequence(cst_pki, root_nodes=None):
 
     relation_info = cst_pki[['TABLE_NAME', 'REFERENCED_TABLE_NAME']].values.tolist()
-    for item in relation_info:
-        print(item)
-    print('*' * 100)
     if root_nodes is not None:
         related_tables = set()
         graph = get_graph(relation_info=relation_info)
