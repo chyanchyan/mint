@@ -204,6 +204,18 @@ class Tree(JsonObj):
             res |= c.all_parenthood_names()
         return res
 
+    def get_child_path(self, child_root: str):
+        res = []
+        for c in self.children:
+            if c.root == child_root:
+                return [self.root, c.root]
+
+            res.extend(c.get_child_path(child_root=child_root))
+        if len(res) > 0:
+            res = [self.root] + res
+
+        return res
+
     def sort_cols(self):
         cols = self.table.cols
         col_orders = dict(zip(cols.keys(), [col.order for col in cols.values()]))
