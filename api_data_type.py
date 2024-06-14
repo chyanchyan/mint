@@ -1,11 +1,15 @@
+import sys
+import os
 from typing import List
 
-if 'mint' in __name__.split('.'):
-    from .helper_function.hf_data import JsonObj
-    from .helper_function.hf_data import to_json_str
-else:
-    from helper_function.hf_data import JsonObj
-    from helper_function.hf_data import to_json_str
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
+
+if parent_dir not in sys.path:
+    sys.path.append(parent_dir)
+
+from mint.helper_function.hf_data import JsonObj
+from mint.helper_function.hf_string import to_json_str
 
 
 class AntdTableColumn(JsonObj):

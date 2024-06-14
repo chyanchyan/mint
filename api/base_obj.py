@@ -1,8 +1,14 @@
+import os
 import pandas as pd
 
-from mint.api.config import *
-from mint.api.db import db_get_con, db_get_schema
-from mint.meta_files.table_objs import get_tables
+if 'mint' in __name__.split('.'):
+    from ..api.globals import *
+    from ..api.db import db_get_con, db_get_schema
+    from ..meta_files.table_objs import get_tables
+else:
+    from mint.api.globals import *
+    from mint.api.db import db_get_con, db_get_schema
+    from mint.meta_files.table_objs import get_tables
 
 
 def get_con(schema_tag):

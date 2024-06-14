@@ -1,20 +1,18 @@
-import os
-import pandas as pd
-import numpy as np
 from pandas import ExcelWriter
 from openpyxl import Workbook
-from copy import copy, deepcopy
+from copy import copy
+import os
+import sys
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
 
-if 'mint' in __name__.split('.'):
-    from .helper_function.hf_xl import fit_col_width
-    from .helper_function.hf_func import *
-    from .helper_function.hf_array import get_crop_from_df
-    from .helper_function.hf_data import *
-else:
-    from helper_function.hf_xl import fit_col_width
-    from helper_function.hf_func import *
-    from helper_function.hf_array import get_crop_from_df
-    from helper_function.hf_data import *
+if parent_dir not in sys.path:
+    sys.path.append(parent_dir)
+
+from mint.helper_function.hf_xl import fit_col_width
+from mint.helper_function.hf_func import *
+from mint.helper_function.hf_array import get_crop_from_df
+from mint.helper_function.hf_data import *
 
 
 def get_cst_pki(con, schemas):

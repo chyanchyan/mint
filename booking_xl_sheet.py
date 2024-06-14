@@ -5,11 +5,15 @@ from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.cell import Cell
 import pandas as pd
+import os
+import sys
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
 
-if 'mint' in __name__.split('.'):
-    from .tree import DataTree
-else:
-    from tree import DataTree
+if parent_dir not in sys.path:
+    sys.path.append(parent_dir)
+
+from mint.tree import DataTree
 
 
 def apply_cell_format(cell_src: Cell, cell_target: Cell):

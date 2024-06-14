@@ -7,3 +7,4 @@ tqdm
 mysqlclient
 pymysql
 line_profiler
+cryptography

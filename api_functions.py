@@ -2,33 +2,26 @@
 
 import os.path
 from copy import deepcopy
-from datetime import datetime as dt
 from typing import Literal
-from copy import copy
+import sys
+import os
+from datetime import datetime as dt
 
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
 
-if 'mint' in __name__.split('.'):
-    from .sys_init import *
-    from .meta_files.table_objs import get_tables
-    from .helper_function.hf_string import udf_format, to_json_obj, to_json_str
-    from .helper_function.hf_file import mkdir, get_last_snapshot_timestamp
-    from .helper_function.hf_xl import migration_pandas
-    from .helper_function.hf_db import df_to_db
-    from .helper_function.hf_func import profile_line_by_line
-    from .helper_function.hf_data import replace_nan_with_none
-    from .tree import DataTree, Tree, get_cst_pki, get_booking_sequence
-    from .booking_xl_sheet import render_booking_xl_sheet
-else:
-    from sys_init import *
-    from meta_files.table_objs import get_tables
-    from helper_function.hf_string import udf_format, to_json_obj, to_json_str
-    from helper_function.hf_file import mkdir, get_last_snapshot_timestamp
-    from helper_function.hf_xl import migration_pandas
-    from helper_function.hf_db import df_to_db
-    from helper_function.hf_func import profile_line_by_line
-    from helper_function.hf_data import replace_nan_with_none
-    from tree import DataTree, Tree, get_cst_pki, get_booking_sequence
-    from booking_xl_sheet import render_booking_xl_sheet
+if parent_dir not in sys.path:
+    sys.path.append(parent_dir)
+    
+from mint.sys_init import *
+from mint.meta_files.table_objs import get_tables
+from mint.helper_function.hf_string import udf_format, to_json_obj, to_json_str
+from mint.helper_function.hf_file import mkdir
+from mint.helper_function.hf_xl import migration_pandas
+from mint.helper_function.hf_db import df_to_db
+from mint.helper_function.hf_data import replace_nan_with_none
+from mint.tree import DataTree, Tree, get_cst_pki, get_booking_sequence
+from mint.booking_xl_sheet import render_booking_xl_sheet
 
 TABLES = get_tables(tables_info=DB_TABLES_INFO, cols_info=DB_COLS_INFO)
 
@@ -45,16 +38,18 @@ def migrate_data_from_xl_folder(
             table_names.append(file[:-5])
 
     table_names.sort(key=lambda x: booking_sequence.index(x))
-
+    
+    con = get_con()
     for table_name in table_names:
         file_name = os.path.join(folder, table_name + '.xlsx')
         print(f'migrating {file_name}')
         migration_pandas(
-            engine=DB_ENGINE,
+            con=con,
             data_path=file_name,
             schema=schema,
             if_exists=if_exists
         )
+    con.close()
 
 
 def get_booking_table_names():
@@ -71,12 +66,13 @@ def get_booking_table_names():
 
 
 def get_data_list(root, index_col=None, index_values=()):
-    cst_pki = get_cst_pki(con=DB_ENGINE, schemas=DB_SCHEMAS_INFO['schema'].tolist())
+    con = get_con()
+    cst_pki = get_cst_pki(con=con, schemas=DB_SCHEMAS_INFO['schema'].tolist())
     cst_pki = cst_pki[
         (cst_pki['TABLE_NAME'] == root) &
         (cst_pki['CONSTRAINT_NAME'] == 'PRIMARY')
     ]
-    tree = Tree(con=DB_ENGINE, tables=TABLES, root=root, cst_pki=cst_pki)
+    tree = Tree(con=con, tables=TABLES, root=root, cst_pki=cst_pki)
     dtree = DataTree(tree=tree)
     dtree.from_sql(
         index_col=index_col,
@@ -84,7 +80,7 @@ def get_data_list(root, index_col=None, index_values=()):
     )
 
     data = dtree.data
-
+    
     for col in dtree.table.cols.values():
         if col.col_name == dtree.pk:
             data[dtree.pk] = data.index
@@ -112,13 +108,13 @@ def get_data_list(root, index_col=None, index_values=()):
         ],
         'rows': data[[col.col_name for col in web_list_cols]].to_dict(orient='records')
     }
-
+    con.close()
     return res
 
 
 def get_data_trees(root, index_col=None, index_values=()):
-
-    tree = Tree(con=DB_ENGINE, tables=TABLES, root=root)
+    con = get_con()
+    tree = Tree(con=con, tables=TABLES, root=root)
     dtree = DataTree(tree=tree)
     dtree.from_sql(
         index_col=index_col,
@@ -160,9 +156,9 @@ def get_nested_values(
 
 def get_booking_structure(in_json_obj):
     branch = in_json_obj['branch']
-
-    t_branch = Tree(con=DB_ENGINE, tables=TABLES)
-    dtree = DataTree(con=DB_ENGINE, tables=TABLES, root=branch)
+    con = get_con()
+    t_branch = Tree(con=con, tables=TABLES)
+    dtree = DataTree(con=con, tables=TABLES, root=branch)
 
     select_values = dtree.get_parents_select_values()
 
@@ -343,7 +339,8 @@ def booking(in_json_obj):
                 df = df.drop_duplicates(subset=df.columns)
         d_dfs[node_root] = df
     print(d_dfs)
-    tree = Tree(con=DB_ENGINE, tables=TABLES, root=root)
+    con = get_con()
+    tree = Tree(con=con, tables=TABLES, root=root)
 
     d_dfs = mark_child_name(d_dfs=d_dfs, tree=tree)
     d_dfs = strip_values(d_dfs=d_dfs)
@@ -352,6 +349,7 @@ def booking(in_json_obj):
 
 
 def dfs_to_db(d_dfs, tree, schema):
+    con = get_con()
     for node_root in tree.booking_sequence:
         try:
             d_dfs[node_root]
@@ -374,7 +372,7 @@ def dfs_to_db(d_dfs, tree, schema):
                 col.col_name for col in table.cols.values()
                 if col.check_pk == 1],
             if_conflict='fill_update',
-            con=DB_ENGINE,
+            con=con,
             schema=schema
         )
 
@@ -446,8 +444,9 @@ def tree_dict_to_json(tree_dict):
 
 
 def gen_booking_xl_sheet_file(root, row_id=''):
+    con = get_con('data')
     timestamp = dt.now().strftime("%Y%m%d_%H%M%S_%f")
-    dtree = DataTree(root=root, con=DB_ENGINES['data'], tables=TABLES)
+    dtree = DataTree(root=root, con=con, tables=TABLES)
     if row_id != "":
         dtree.from_sql(index_col='id', index_values={row_id})
         p_name = dtree.relevant_data_set[root]["name"].values[0]
@@ -467,7 +466,7 @@ def gen_booking_xl_sheet_file(root, row_id=''):
         output_path=output_path,
         data_tree=dtree,
         template_path=template_path,
-        con=DB_ENGINE
+        con=con
     )
 
     return {
@@ -477,7 +476,8 @@ def gen_booking_xl_sheet_file(root, row_id=''):
 
 
 def xl_sheet_to_dtree(root, file_path):
-    dtree = DataTree(root=root, con=DB_ENGINES['data'], tables=TABLES)
+    con = get_con('data')
+    dtree = DataTree(root=root, con=con, tables=TABLES)
     dfs = pd.read_excel(
         file_path,
         sheet_name=None
@@ -487,30 +487,19 @@ def xl_sheet_to_dtree(root, file_path):
 
 
 def migrate_from_xlsx(folder, schema_tags=None):
-    cst_pki = get_cst_pki(con=DB_ENGINE, schemas=DB_SCHEMAS.values())
-    booking_sequence = get_booking_sequence(cst_pki=cst_pki)
+    con = get_con()
 
     if schema_tags is None:
-        schema_tags = copy(DB_SCHEMA_TAGS)
+        schema_tags = get_schema_tags()
+
+    cst_pki = get_cst_pki(con=con, schemas=[get_schema(schema_tag) for schema_tag in schema_tags])
+    booking_sequence = get_booking_sequence(cst_pki=cst_pki)
 
     for schema_tag in schema_tags:
-        schema = DB_SCHEMAS[schema_tag]
+        schema = get_schema(schema_tag)
         schema_folder = os.path.join(folder, schema)
         migrate_data_from_xl_folder(
             folder=schema_folder,
             schema=schema,
             booking_sequence=booking_sequence
         )
-
-
-@profile_line_by_line
-def test_tree():
-    t = Tree(con=DB_ENGINE, tables=TABLES, root='project')
-
-
-def test_gen_booking_sheet():
-    gen_booking_xl_sheet_file(root='project', row_id='816')
-
-
-if __name__ == '__main__':
-    test_gen_booking_sheet()

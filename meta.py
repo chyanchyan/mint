@@ -2,37 +2,39 @@ import os.path
 from datetime import datetime as dt
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import text, create_engine
-from copy import copy
 
+import os
+import sys
 
-if 'mint' in __name__.split('.'):
-    from .sys_init import *
-    from .helper_function.wrappers import sub_wrapper
-    from .helper_function.hf_file import snapshot, mkdir
-    from .helper_function.hf_string import list_to_attr_code
-    from .helper_function.hf_db import export_xl
-else:
-    from sys_init import *
-    from helper_function.wrappers import sub_wrapper
-    from helper_function.hf_file import snapshot, mkdir
-    from helper_function.hf_string import list_to_attr_code
-    from helper_function.hf_db import export_xl
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
+
+if parent_dir not in sys.path:
+    sys.path.append(parent_dir)
+
+from mint.sys_init import *
+from mint.helper_function.wrappers import sub_wrapper
+from mint.helper_function.hf_file import snapshot, mkdir
+from mint.helper_function.hf_string import list_to_attr_code
+from mint.helper_function.hf_db import export_xl
 
 
 @sub_wrapper(SYS_MODE)
 def drop_schemas(schema_tags=None):
-    if schema_tags is None:
-        schema_tags = []
-        for i, r in DB_SCHEMAS_INFO.iterrows():
-            schema_tags.append(r['schema_tag'])
 
-    session_class = sessionmaker(bind=DB_ENGINE)
+    engine, con, url = get_engine_con_url()
+    session_class = sessionmaker(bind=engine)
     session = session_class()
 
+    if schema_tags is None:
+        schema_tags = get_schema_tags()
+
     for schema_tag in schema_tags:
-        drop_schema(session=session, schema=DB_SCHEMAS[schema_tag])
+        schema = get_schema(schema_tag=schema_tag)
+        drop_schema(session=session, schema=schema)
     session.commit()
     session.close()
+    con.close()
 
 
 @sub_wrapper(SYS_MODE)
@@ -102,7 +104,7 @@ def refresh_models():
     if 'mint' in __name__.split('.'):
         exec('from .meta_files.table_objs import get_tables')
     else:
-        exec('from mint.table_objs import get_tables')
+        exec('from mint.meta_files.table_objs import get_tables')
     tables = eval('get_tables(tables_info=DB_TABLES_INFO, cols_info=DB_COLS_INFO)')
     tables_list = [v for k, v in tables.items()]
     tables_list.sort(key=lambda x: x.order)
@@ -121,24 +123,26 @@ def refresh_models():
 
 def snapshot_database(schema_tags=None, comments=''):
     if schema_tags is None:
-        schema_tags = copy(DB_SCHEMA_TAGS)
+        schema_tags = get_schema_tags()
     folder = dt.now().strftime('%Y%m%d_%H%M%S_%f') + f'-{comments}'
     if not os.path.exists(PATH_DB_SNAPSHOT):
         mkdir(PATH_DB_SNAPSHOT)
 
+    con = get_con()
+
     for schema_tag in schema_tags:
         folder = os.path.join(
-            PATH_DB_SNAPSHOT,
-            folder,
-            DB_SCHEMAS[schema_tag]
+            str(PATH_DB_SNAPSHOT),
+            str(folder),
+            str(get_schema(schema_tag))
         )
         if not os.path.exists(folder):
             mkdir(folder)
 
         export_xl(
             output_folder=folder,
-            con=DB_ENGINE,
-            schema=DB_SCHEMAS[schema_tag],
+            con=con,
+            schema=get_schema(schema_tag=schema_tag),
             table_names=None
         )
 
@@ -149,7 +153,9 @@ def create_tables():
         exec('from .meta_files import models')
     else:
         exec('from mint.meta_files import models')
-    engine = create_engine(DB_URL)
+    engine, con, url = get_engine_con_url()
+    engine = create_engine(url)
+    con.close()
     print("creating tables")
     exec('models.Base.metadata.create_all(engine)')
     print("tables created")
@@ -157,9 +163,14 @@ def create_tables():
 
 @sub_wrapper(SYS_MODE)
 def restore_sys():
+
     drop_schemas()
     refresh_table_info_to_db()
-    refresh_db_info()
+
+    con = get_con('core')
+    refresh_db_info(con=con)
+    con.close()
+
     snapshot_table_obj()
     refresh_table_obj()
     snapshot_models()
@@ -170,7 +181,11 @@ def restore_sys():
 @sub_wrapper(SYS_MODE)
 def restore_table():
     refresh_table_info_to_db()
-    refresh_db_info()
+
+    con = get_con('core')
+    refresh_db_info(con=con)
+    con.close()
+
     snapshot_table_obj()
     refresh_table_obj()
 
@@ -184,7 +199,11 @@ def restore_db(schema_tags=None):
 @sub_wrapper(SYS_MODE)
 def add_table():
     refresh_table_info_to_db()
-    refresh_db_info()
+
+    con = get_con('core')
+    refresh_db_info(con=con)
+    con.close()
+
     snapshot_models()
     refresh_models()
     create_tables()
@@ -196,3 +215,8 @@ def init_sys():
     refresh_table_obj()
 
 
+if not os.path.exists('meta_files/table_obj.py'):
+    refresh_table_obj()
+
+if not os.path.exists('meta_files/models.py'):
+    refresh_models()

@@ -1,16 +1,19 @@
 import re
+import sys
+import os
 import pandas as pd
 
-if 'mint' in __name__.split('.'):
-    from ..sys_init import DB_SCHEMAS
-    from ..helper_function.hf_number import is_number
-    from ..helper_function.hf_data import JsonObj
-    from ..helper_function.hf_string import dash_name_to_camel
-else:
-    from mint.sys_init import DB_SCHEMAS
-    from mint.helper_function.hf_number import is_number
-    from mint.helper_function.hf_data import JsonObj
-    from mint.helper_function.hf_string import dash_name_to_camel
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
+
+if parent_dir not in sys.path:
+    sys.path.append(parent_dir)
+
+
+from mint.sys_init import get_schema
+from mint.helper_function.hf_number import is_number
+from mint.helper_function.hf_data import JsonObj
+from mint.helper_function.hf_string import dash_name_to_camel
 
 
 js_data_type_map = {
@@ -79,7 +82,7 @@ class MetaColumn(JsonObj):
     def to_model_code(self):
         if not pd.isna(self.foreign_key):
             fk_schema_tag, fk_table, fk_col = self.foreign_key.split('.')
-            fk_schema = DB_SCHEMAS[fk_schema_tag]
+            fk_schema = get_schema(fk_schema_tag)
             s_fk = ', '.join([
                 'f\'%s.%s.%s\'' % (fk_schema, fk_table, fk_col),
                 'ondelete=\'%s\'' % self.fk_on_delete,
@@ -182,7 +185,7 @@ class MetaTable(JsonObj):
             if pd.isna(self.schema_tag):
                 self.schema = None
             else:
-                self.schema = DB_SCHEMAS[self.schema_tag]
+                self.schema = get_schema(self.schema_tag)
             self.cols_info = cols_info
             self.cols = {
                 col_info['col_name']: MetaColumn(table_info=table_info, col_info=col_info, order=i)
