@@ -5,7 +5,8 @@ import pandas as pd
 import pymysql
 import sqlalchemy.exc
 from sqlalchemy import create_engine
-
+from dateutil.relativedelta import relativedelta
+from mint.helper_function.hf_func import profile_line_by_line
 
 def db_get_schema(schema_tag, sys_mode, project_name):
     if sys_mode == 'PROD':
@@ -266,51 +267,29 @@ def db_get_df_changes(
         index: str,
         st_date: dt,
         exp_date: dt,
+        delta_col: str,
+        to_col: str,
         date_col: str,
         filter_sql: str = None
 ):
-
-    # sql = f"""
-    #     SELECT *
-    #     FROM `{table_name}`
-    #     WHERE (`{index}`, `{date_col}`) IN (
-    #         SELECT `{index}`, MAX(`{date_col}`) AS max_date
-    #         FROM `{table_name}`
-    #         WHERE {date_col} <= "{st_date.strftime('%F')}"
-    #         %s
-    #         GROUP BY `{index}`
-    #     )
-    #     OR (`{date_col}` > "{st_date.strftime('%F')}"
-    #     AND `{date_col}` <= "{exp_date.strftime('%F')}")
-    #     %s
-    #     ORDER BY `{index}`, `{date_col}`
-    # """
-    # if filter_sql is not None:
-    #     sql = sql % (f'AND {filter_sql}', f'AND {filter_sql}')
-    # else:
-    #     sql = sql % ('', '')
-    # res = pd.read_sql(
-    #     sql=sql,
-    #     con=con
-    # )
-
     sql_less_max = f"""
         SELECT t1.*
         FROM `{table_name}` t1
         JOIN (
             SELECT `{index}`, MAX(`{date_col}`) AS max_date
             FROM `{table_name}`
-            WHERE `{date_col}` <= "{st_date.strftime('%F')}"
+            WHERE `{date_col}` < "{st_date.strftime('%F')}"
             GROUP BY `{index}`    
         ) t2
         ON t1.`{index}` = t2.`{index}` AND t1.`{date_col}` = t2.max_date
         %s
     """
+
     sql_rest = f"""
         SELECT *
         FROM `{table_name}`
-        WHERE (`{date_col}` > "{st_date.strftime('%F')}" 
-        AND `{date_col}` <= "{exp_date.strftime('%F')}") 
+        WHERE (`{date_col}` >= "{st_date.strftime('%F')}" 
+        AND `{date_col}` < "{exp_date.strftime('%F')}") 
         %s 
     """
 
@@ -324,13 +303,14 @@ def db_get_df_changes(
         sql=sql_less_max,
         con=con
     )
-    df_less_max[date_col] = st_date
+    df_less_max[date_col] = st_date - relativedelta(seconds=1)
+
     df_rest = pd.read_sql(
         sql=sql_rest,
         con=con
     )
-
-    res = pd.concat([df_less_max, df_rest])
+    df_less_max[delta_col] = df_less_max[to_col]
+    res = pd.concat([df_less_max, df_rest]).sort_values([index, date_col]).reset_index(drop=True)
 
     return res
 

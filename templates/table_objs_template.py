@@ -25,8 +25,10 @@ js_data_type_map = {
 
 
 class MetaColumn(JsonObj):
-    def __init__(self, table_info: pd.Series, col_info: pd.Series, order):
+    def __init__(self, table_info, col_info, order):
         super(MetaColumn, self).__init__()
+
+        col_info = col_info.to_dict()
         # col attr start
         self.table_name = col_info['table_name']
         self.col_name = col_info['col_name']
@@ -162,17 +164,18 @@ class MetaColumn(JsonObj):
 class MetaTable(JsonObj):
     def __init__(
             self,
-            table_info: pd.Series = (),
-            cols_info: pd.DataFrame = (),
+            table_info: pd.Series = None,
+            cols_info: pd.DataFrame = None,
             order=None
     ):
         super(MetaTable, self).__init__()
-        if len(table_info) == 0 or len(cols_info) == 0:
+        if len(table_info) is None or len(cols_info) is None:
             self.class_name = None
             self.table_name = None
             self.comment = None
             self.cols = {}
         else:
+            table_info = table_info.to_dict()
             # table attr start
             self.table_name = table_info['table_name']
             self.label = table_info['label']

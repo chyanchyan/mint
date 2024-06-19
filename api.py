@@ -57,7 +57,6 @@ def api_file_upload():
 
     if file:
         filename = file.filename
-        # filename = secure_filename(file.filename)
         filepath = os.path.join(PATH_UPLOAD, filename)
         file.save(filepath)
         print(f'file saved: {filepath}')

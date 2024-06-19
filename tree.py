@@ -134,7 +134,6 @@ class Tree(JsonObj):
                     reffed=parent_reffed
                 )
             except KeyError:
-                print()
                 raise KeyError
             self.parents.append(parent)
 
@@ -877,8 +876,6 @@ class DataTree(Tree):
             except KeyError:
                 print(f'no sheet for root "{parent_root}"')
                 continue
-            if parent.root == 'inst':
-                print()
 
             try:
                 parent_df_raw = dfs[parent_sheet_name]

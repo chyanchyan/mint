@@ -5,7 +5,7 @@ from copy import deepcopy
 from typing import Literal
 import sys
 import os
-from datetime import datetime as dt
+from sqlalchemy.exc import OperationalError
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
@@ -17,13 +17,60 @@ from mint.sys_init import *
 from mint.meta_files.table_objs import get_tables
 from mint.helper_function.hf_string import udf_format, to_json_obj, to_json_str
 from mint.helper_function.hf_file import mkdir
-from mint.helper_function.hf_xl import migration_pandas
 from mint.helper_function.hf_db import df_to_db
 from mint.helper_function.hf_data import replace_nan_with_none
 from mint.tree import DataTree, Tree, get_cst_pki, get_booking_sequence
 from mint.booking_xl_sheet import render_booking_xl_sheet
 
 TABLES = get_tables(tables_info=DB_TABLES_INFO, cols_info=DB_COLS_INFO)
+
+
+def migration_pandas(con, data_path, schema, if_exists):
+    name = os.path.basename(data_path)[:-5]
+    try:
+        data = pd.read_excel(data_path, index_col=False)
+
+        regular_cols = [col for col in data.columns.tolist() if col[:3] != 'dv_']
+        dv_cols = [col for col in data.columns.tolist() if col[:3] == 'dv_']
+        data_to_db = data[regular_cols]
+
+        if name == 'project':
+            table_name = '项目信息'
+            row_index = 'name'
+        elif name == 'project_level':
+            table_name = '项目分级信息'
+            row_index = 'name'
+        elif name == 'project_change':
+            table_name = '项目分级变动信息'
+            row_index = 'project_level_name'
+        else:
+            table_name = name
+            row_index = 'id'
+        if len(dv_cols) > 0:
+            for i, r in data.iterrows():
+                for col in dv_cols:
+                    if not pd.isna(r[col]):
+                        print(
+                            f'表：{table_name} \n'
+                            f'行：{r[row_index]} \n'
+                            f'列：{col.strip("dv_")} \n'
+                            f'自： {data_to_db.loc[i, col.strip("dv_")]} \n'
+                            f'更新为：{r[col]} \n')
+                        print('*' * 50)
+                        data_to_db.loc[i, col.strip('dv_')] = r[col]
+
+        data_to_db.to_sql(
+            name=name,
+            con=con,
+            schema=schema,
+            if_exists=if_exists,
+            index=False
+        )
+    except FileNotFoundError:
+        print(f'table: {name} xlsx file not exist')
+    except OperationalError as e:
+        print(traceback.format_exc())
+        raise e
 
 
 def migrate_data_from_xl_folder(
@@ -209,7 +256,6 @@ def mark_ref_value(root, rows, parents, tables):
                 try:
                     reffed_value = list(p_d[p_name][reffed_col][0].values())[0]
                 except KeyError:
-                    print()
                     raise KeyError
                 for i, cell in enumerate(rows[ref_col]):
                     if list(cell.keys())[0] == ref_cell_id:
@@ -398,32 +444,6 @@ def dict_to_df(d):
         df[col_name] = [list(cell.values())[0] for cell in col_data]
 
     return df
-
-
-def file_upload(file, folder, timestamped=False):
-    dir_folder = os.path.join(PATH_UPLOAD, folder)
-    filename = file.filename
-    split_str = filename.split('.')
-    filename_base, ext = '.'.join(split_str[:-1]), split_str[-1]
-    if not os.path.exists(dir_folder):
-        mkdir(dir_folder)
-    if timestamped:
-        name_ele = [
-            filename_base,
-            dt.now().strftime('%Y%m%d_%H%M%S_%f')
-        ]
-    else:
-        name_ele = [
-            filename_base
-        ]
-    file_path = os.path.join(
-        str(dir_folder),
-        '_'.join(name_ele)
-    ) + '.' + ext
-
-    file.save(dst=file_path)
-
-    return file_path, filename
 
 
 def tree_dict_to_json(tree_dict):
