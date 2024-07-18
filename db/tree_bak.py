@@ -3,6 +3,8 @@ from openpyxl import Workbook
 from copy import copy
 import os
 import sys
+from collections import OrderedDict
+
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
 
@@ -15,6 +17,7 @@ from mint.helper_function.hf_array import get_crop_from_df
 from mint.helper_function.hf_data import *
 
 
+# @profile_line_by_line
 def get_cst_pki(con, schemas):
     in_str = ', '.join([f'"{schema}"' for schema in schemas])
     stmt = (
@@ -26,8 +29,8 @@ def get_cst_pki(con, schemas):
     return res
 
 
+# @profile_line_by_line
 def get_booking_sequence(cst_pki, root_nodes=None):
-
     relation_info = cst_pki[['TABLE_NAME', 'REFERENCED_TABLE_NAME']].values.tolist()
     if root_nodes is not None:
         related_tables = set()
@@ -49,13 +52,14 @@ def get_booking_sequence(cst_pki, root_nodes=None):
 
 
 class Tree(JsonObj):
+    @profile_line_by_line
     def __init__(
             self,
             con,
             tables,
             tree=None,
             root=None,
-            cst_pki=None,
+            cst=None,
             ref=None,
             reffed=None
     ):
@@ -63,20 +67,19 @@ class Tree(JsonObj):
             self.con = tree.con
             self.tables = tree.tables
             self.root = tree.root
-            self.cst_pki = copy(tree.cst_pki)
+            self.cst = copy(tree.cst)
             self.ref = tree.ref
             self.reffed = tree.reffed
             self.table = tree.table
-            self.pk = tree.pk
 
-            self.ref_info = tree.cst_pki[
-                (tree.cst_pki['CONSTRAINT_NAME'] != 'PRIMARY') &
-                (tree.cst_pki['TABLE_NAME'] == tree.root) &
-                ~(pd.isna(tree.cst_pki['REFERENCED_TABLE_NAME']))
-                ]
-            self.reffed_info = tree.cst_pki[
-                tree.cst_pki['REFERENCED_TABLE_NAME'] == tree.root
-                ]
+            self.ref_info = tree.cst[
+                (tree.cst['CONSTRAINT_NAME'] != 'PRIMARY') &
+                (tree.cst['TABLE_NAME'] == tree.root) &
+                ~(pd.isna(tree.cst['REFERENCED_TABLE_NAME']))
+            ]
+            self.reffed_info = tree.cst[
+                tree.cst['REFERENCED_TABLE_NAME'] == tree.root
+            ]
 
             self.parents = tree.parents
             self.children = tree.children
@@ -89,9 +92,10 @@ class Tree(JsonObj):
         self.root = root
 
         self.schemas = list(set([table.schema for table in tables.values()]))
-        if cst_pki is None:
+        if cst is None:
             cst_pki = get_cst_pki(con=con, schemas=self.schemas)
-        self.cst_pki = deepcopy(cst_pki)
+            cst = cst_pki[cst_pki['CONSTRAINT_NAME'] != 'PRIMARY']
+        self.cst = deepcopy(cst)
 
         self.tables = tables
         self.table = tables[root]
@@ -104,37 +108,28 @@ class Tree(JsonObj):
 
         JsonObj.__init__(self)
 
-        self.pk = cst_pki[
-            (cst_pki['CONSTRAINT_NAME'] == 'PRIMARY') &
-            (cst_pki['TABLE_NAME'] == root)
-            ]['COLUMN_NAME'].values[0]
-
-        self.ref_info = cst_pki[
-            (cst_pki['CONSTRAINT_NAME'] != 'PRIMARY') &
-            (cst_pki['TABLE_NAME'] == root) &
-            ~(pd.isna(cst_pki['REFERENCED_TABLE_NAME']))
-            ]
-        self.reffed_info = cst_pki[cst_pki['REFERENCED_TABLE_NAME'] == root]
+        self.ref_info = cst[
+            (cst['TABLE_NAME'] == root) &
+            ~(pd.isna(cst['REFERENCED_TABLE_NAME']))
+        ]
+        self.reffed_info = cst[cst['REFERENCED_TABLE_NAME'] == root]
 
         for i, parents_cst_row in self.ref_info.iterrows():
             parent_root = parents_cst_row['REFERENCED_TABLE_NAME']
             parent_ref = parents_cst_row['COLUMN_NAME']
             parent_reffed = parents_cst_row['REFERENCED_COLUMN_NAME']
-            parents_cst_pki = cst_pki[
-                (cst_pki['TABLE_NAME'] != self.root) &
-                (cst_pki['REFERENCED_TABLE_NAME'] != parent_root)
-                ]
-            try:
-                parent = Tree(
-                    con=con,
-                    tables=self.tables,
-                    root=parents_cst_row['REFERENCED_TABLE_NAME'],
-                    cst_pki=parents_cst_pki,
-                    ref=parent_ref,
-                    reffed=parent_reffed
-                )
-            except KeyError:
-                raise KeyError
+            parents_cst = cst[
+                (cst['TABLE_NAME'] != self.root) &
+                (cst['REFERENCED_TABLE_NAME'] != parent_root)
+            ]
+            parent = Tree(
+                con=con,
+                tables=self.tables,
+                root=parents_cst_row['REFERENCED_TABLE_NAME'],
+                cst=parents_cst,
+                ref=parent_ref,
+                reffed=parent_reffed
+            )
             self.parents.append(parent)
 
         self.parents.sort(key=lambda x: self.tables[x.root].order)
@@ -143,27 +138,25 @@ class Tree(JsonObj):
             child_root = child_cst_row['TABLE_NAME']
             child_ref = child_cst_row['COLUMN_NAME']
             child_reffed = child_cst_row['REFERENCED_COLUMN_NAME']
-            children_cst_pki = cst_pki[
-                (cst_pki['REFERENCED_TABLE_NAME'] != self.root) &
-                (cst_pki['TABLE_NAME'] != self.root)
+            children_cst = cst[
+                (cst['REFERENCED_TABLE_NAME'] != self.root) &
+                (cst['TABLE_NAME'] != self.root)
                 ]
             child = Tree(
                 con=con,
                 tables=self.tables,
                 root=child_root,
-                cst_pki=children_cst_pki,
+                cst=children_cst,
                 ref=child_ref,
                 reffed=child_reffed
             )
             self.children.append(child)
+
         self.children.sort(key=lambda x: self.tables[x.root].order)
+        self.booking_sequence = self.get_booking_sequence()
+        self.reading_sequence = self.booking_sequence.__reversed__()
 
         self.node_names = self.get_node_names()
-        self.booking_sequence = get_booking_sequence(
-            cst_pki=cst_pki, root_nodes=self.node_names
-        )
-        self.reading_sequence = [item for item in self.booking_sequence.__reversed__()]
-
         self.sort_cols()
 
     def __bool__(self):
@@ -186,6 +179,17 @@ class Tree(JsonObj):
 
     def __eq__(self, other):
         return self.root == other.root
+
+    def get_booking_sequence(self):
+        res = sum([
+            p.get_booking_sequence() for p in self.parents
+        ], start=[]) + [
+            self.root
+        ] + sum([
+            c.get_booking_sequence() for c in self.children
+        ], start=[])
+
+        return [item for i, item in enumerate(res) if item not in res[:i]]
 
     def all_parenthood_names(self):
         res = set([p.root for p in self.parents])
@@ -418,7 +422,7 @@ class DataTree(Tree):
                 try:
                     adding_data = set(root_data[p.ref].dropna())
                 except KeyError:
-                    print(f'parent fef info error: {p.ref}')
+                    print(f'parent ref info error: {p.ref}')
                     adding_data = set()
 
             try:

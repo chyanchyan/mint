@@ -14,13 +14,13 @@ if parent_dir not in sys.path:
     sys.path.append(parent_dir)
     
 from mint.sys_init import *
-from mint.meta_files.table_objs import get_tables
+from mint.meta.table_objs import get_tables
 from mint.helper_function.hf_string import udf_format, to_json_obj, to_json_str
 from mint.helper_function.hf_file import mkdir
 from mint.helper_function.hf_db import df_to_db
 from mint.helper_function.hf_data import replace_nan_with_none
-from mint.tree import DataTree, Tree, get_cst_pki, get_booking_sequence
-from mint.booking_xl_sheet import render_booking_xl_sheet
+from mint.db.tree import DataTree, Tree, get_cst_pki, get_booking_sequence
+from mint.api.api_booking_xl_sheet import render_booking_xl_sheet
 
 TABLES = get_tables(tables_info=DB_TABLES_INFO, cols_info=DB_COLS_INFO)
 
@@ -357,72 +357,6 @@ def strip_values(d_dfs):
 def fill_empty_cells_to_null(df: pd.DataFrame):
     return df.replace(to_replace="", value=None)
 
-
-def booking(in_json_obj):
-    # user_name = in_json_obj['user_name']
-    root = in_json_obj['data']['root']
-    data = in_json_obj['data']['data']
-    schema = f'{PROJECT_NAME}_data_{SYS_MODE}'
-
-    nodes = []
-    for d in data:
-        node, parents = fetch_data_from_dict(d=d, tables=TABLES)
-        nodes.append(node)
-        nodes.extend(parents)
-
-    d_dfs_ = merge_booking_nodes_rows(nodes)
-    d_dfs = {}
-    for node_root, d_rows in d_dfs_.items():
-        if len(d_rows) > 0:
-            d_dfs[node_root] = dict_to_df(d=d_rows)
-
-    for node_root, df in d_dfs.items():
-        df = df.replace(to_replace="", value=None)
-        print(df)
-        table = TABLES[node_root]
-        for col in df.columns:
-            if table.cols[col].unique or table.cols[col].foreign_key:
-                df = df.drop_duplicates(subset=df.columns)
-        d_dfs[node_root] = df
-    print(d_dfs)
-    con = get_con()
-    tree = Tree(con=con, tables=TABLES, root=root)
-
-    d_dfs = mark_child_name(d_dfs=d_dfs, tree=tree)
-    d_dfs = strip_values(d_dfs=d_dfs)
-
-    dfs_to_db(d_dfs=d_dfs, tree=tree, schema=schema)
-
-
-def dfs_to_db(d_dfs, tree, schema):
-    con = get_con()
-    for node_root in tree.booking_sequence:
-        try:
-            d_dfs[node_root]
-        except KeyError:
-            continue
-
-        table = tree.tables[node_root]
-        df = d_dfs[node_root]
-        df.applymap(lambda x: x.strip() if isinstance(x, str) else x)
-
-        print(node_root)
-        print(df)
-        print('*' * 100)
-        if len(df) == 0:
-            continue
-        df_to_db(
-            df=df,
-            name=node_root,
-            check_cols=[
-                col.col_name for col in table.cols.values()
-                if col.check_pk == 1],
-            if_conflict='fill_update',
-            con=con,
-            schema=schema
-        )
-
-
 def merge_booking_nodes_rows(nodes_data_list):
     res = {}
     for node_data in nodes_data_list:
@@ -495,15 +429,7 @@ def gen_booking_xl_sheet_file(root, row_id=''):
     }
 
 
-def xl_sheet_to_dtree(root, file_path):
-    con = get_con('data')
-    dtree = DataTree(root=root, con=con, tables=TABLES)
-    dfs = pd.read_excel(
-        file_path,
-        sheet_name=None
-    )
-    dtree.from_excel_booking_sheet(dfs=dfs)
-    return dtree
+
 
 
 def migrate_from_xlsx(folder, schema_tags=None):

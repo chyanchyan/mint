@@ -1,4 +1,4 @@
-from mint.tree import *
+from mint.db.tree import *
 from mint.api.base_obj import *
 
 

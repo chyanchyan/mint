@@ -13,7 +13,7 @@ parent_dir = os.path.dirname(current_dir)
 if parent_dir not in sys.path:
     sys.path.append(parent_dir)
 
-from mint.tree import DataTree
+from mint.db.tree import DataTree
 
 
 def apply_cell_format(cell_src: Cell, cell_target: Cell):
@@ -394,4 +394,6 @@ def render_booking_xl_sheet(output_path, template_path, data_tree: DataTree, con
     ws_booking.column_dimensions['C'].hidden = True
 
     wb.save(output_path)
+
+
 

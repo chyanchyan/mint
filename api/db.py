@@ -147,6 +147,7 @@ def db_get_first_delta_to_null_rows_and_all_rest_rows(
     return res
 
 
+# @profile_line_by_line
 def db_fill_change_null_value(
         df_to_fill: pd.DataFrame,
         table_name,
@@ -176,14 +177,14 @@ def db_fill_change_null_value(
 
                 # 若第一天就缺失某一个值，则等于另一个值
                 elif pd.isna(delta_value):
-                    delta_value = copy(to_value)
+                    delta_value = round(to_value, 5)
                     sql = (
                         f'update `{table_name}` set `{delta_col}` = {delta_value} '
                         f'where `id` = {row_id};'
                     )
                     df_filled.loc[g_row.name, delta_col] = delta_value
                 elif pd.isna(to_value):
-                    to_value = copy(delta_value)
+                    to_value = round(delta_value, 5)
                     sql = (
                         f'update `{table_name}` set `{to_col}` = {delta_value} '
                         f'where `id` = {row_id};'
@@ -192,21 +193,21 @@ def db_fill_change_null_value(
             else:
                 # 若期间缺失某一个值
                 if pd.isna(delta_value) and not pd.isna(to_value):
-                    delta_value = to_value - last_to
+                    delta_value = round(to_value - last_to, 5)
                     sql = (
                         f'update `{table_name}` set `{delta_col}` = {delta_value} '
                         f'where `id` = {row_id};'
                     )
                     df_filled.loc[g_row.name, delta_col] = delta_value
                 elif pd.isna(to_value) and not pd.isna(delta_value):
-                    to_value = last_to + delta_value
+                    to_value = round(last_to + delta_value, 5)
                     sql = (
                         f'update `{table_name}` set `{to_col}` = {to_value} '
                         f'where `id` = {row_id};'
                     )
                     df_filled.loc[g_row.name, to_col] = to_value
                 elif pd.isna(to_value) and pd.isna(delta_value):
-                    to_value = copy(last_to)
+                    to_value = round(last_to, 5)
                     sql = (
                         f'update `{table_name}` set `{delta_col}` = 0, '
                         f'`{to_col}` = {to_value} '
@@ -303,8 +304,8 @@ def db_get_df_changes(
         sql=sql_less_max,
         con=con
     )
-    df_less_max[date_col] = st_date - relativedelta(seconds=1)
-
+    # df_less_max[date_col] = st_date - relativedelta(seconds=1)
+    df_less_max['_is_less_max'] = 1
     df_rest = pd.read_sql(
         sql=sql_rest,
         con=con

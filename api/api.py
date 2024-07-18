@@ -10,9 +10,9 @@ parent_dir = os.path.dirname(current_dir)
 if parent_dir not in sys.path:
     sys.path.append(parent_dir)
 
-from helper_function.wrappers import api_status_wrapper
+from mint.helper_function.wrappers import api_status_wrapper
 from mint.sys_init import *
-from helper_function.hf_data import *
+from mint.helper_function.hf_data import *
 
 app = Flask(__name__)
 CORS(app=app)

@@ -10,7 +10,7 @@ if parent_dir not in sys.path:
 
 from mint.api.globals import *
 from mint.api.db import db_connect_db, db_get_schema
-from mint.meta_files.table_objs import get_tables
+from mint.meta.table_objs import get_tables_from_info
 from mint.helper_function.hf_func import profile_line_by_line
 
 
@@ -26,7 +26,7 @@ def get_con(schema_tag):
     return con
 
 
-def get_table_objs(schema_tag: str = None):
+def get_tables(schema_tag: str = None):
     if schema_tag is not None:
         filter_sql = f' where `schema_tag` = "{schema_tag}" or `schema_tag` is Null'
     else:
@@ -42,7 +42,7 @@ def get_table_objs(schema_tag: str = None):
         sql=f'select * from cols where `table_name` in ({table_names_sql_filter})',
         con=con
     )
-    res = get_tables(tables_info=tables_info, cols_info=cols_info)
+    res = get_tables_from_info(tables_info=tables_info, cols_info=cols_info)
     con.close()
     return res
 
