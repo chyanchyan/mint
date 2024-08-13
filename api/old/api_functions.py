@@ -6,11 +6,8 @@ from copy import deepcopy
 from typing import Literal
 import sys
 import os
-
-import pandas as pd
 from sqlalchemy.exc import OperationalError
 from sqlalchemy import text
-
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
@@ -19,12 +16,15 @@ if parent_dir not in sys.path:
     sys.path.append(parent_dir)
     
 from mint.sys_init import *
-from mint.db.utils import get_tables
+from mint.meta.table_objs import get_tables_from_info
 from mint.helper_function.hf_string import udf_format, to_json_obj, to_json_str
 from mint.helper_function.hf_file import mkdir
-from mint.db.tree import *
+from mint.helper_function.hf_data import replace_nan_with_none
+from mint.db.tree import DataTree, Tree, get_cst_pki, get_booking_sequence
 from mint.api.api_booking_xl_sheet import render_booking_xl_sheet
-from mint.helper_function.hf_data import df_to_ant_table_options
+
+
+TABLES = get_tables_from_info(tables_info=DB_TABLES_INFO, cols_info=DB_COLS_INFO)
 
 
 def migration_pandas(con, data_path, schema, if_exists):
@@ -101,58 +101,103 @@ def migrate_data_from_xl_folder(
     con.close()
 
 
-def get_right_angle_trees(
-        root,
-        index_col=None,
-        index_values=None,
-        limit=0,
-        offset=None,
-        file_name_str=None,
-        stash_uuid=None,
-        **kwargs
-):
-    con = get_con('data')
-    tables = get_tables('data')
-    tree = Tree(con=con, tables=tables, root=root)
-    if file_name_str is not None and file_name_str != '':
-        file_names = file_name_str.split(';')
-        file_path = os.path.join(PATH_UPLOAD, file_names[0])
-        dfs = pd.read_excel(file_path, sheet_name=None)
-        t = DataTree(tree=tree)
-        t.from_excel_booking_sheet(dfs=dfs)
-    else:
-        if stash_uuid is not None:
-            t = DataTree(tree=tree)
-            relevant_data_set_res = con.execute(
-                text(
-                    'select root, relevant_data_set from stash where stash_uuid = :stash_uuid'
-                ),
-                {'stash_uuid': stash_uuid}
-            )
-            if relevant_data_set_res.rowcount > 0:
-                relevant_data_set = to_json_obj(relevant_data_set_res.fetchone()[1])
-                relevant_data_set = {
-                    k: pd.DataFrame(v)
-                    for k, v in relevant_data_set.items()
-                    if len(v) > 0
-                }
-                t.from_relevant_data_set(relevant_data_set=relevant_data_set)
-        else:
-            if int(limit) == 0:
-                t = tree
-            else:
-                t = DataTree(tree=tree)
-                t.from_sql(
-                    index_col=index_col,
-                    index_values=set(index_values),
-                    limit=limit,
-                    offset=offset
-                )
+def get_booking_table_names():
+    res = [
+        {
+            'name': table.table_name,
+            'web_label': table.label,
+            'order': table.web_list_index
+        }
+        for i, table in TABLES.items()
+        if not pd.isna(table.web_list_index)
+    ]
+    return res
 
-    res = get_right_angle_trees_from_tree_from_tree(tree=t)
-    res = [t.json_obj for t in res]
+
+def get_data_list(root, index_col=None, index_values=()):
+    con = get_con()
+    cst_pki = get_cst_pki(con=con, schemas=DB_SCHEMAS_INFO['schema'].tolist())
+    cst_pki = cst_pki[
+        (cst_pki['TABLE_NAME'] == root) &
+        (cst_pki['CONSTRAINT_NAME'] == 'PRIMARY')
+    ]
+    tree = Tree(con=con, tables=TABLES, root=root, cst_pki=cst_pki)
+    dtree = DataTree(tree=tree)
+    dtree.from_sql(
+        index_col=index_col,
+        index_values=index_values
+    )
+
+    data = dtree.data
+    
+    for col in dtree.table.cols.values():
+        if col.col_name == dtree.pk:
+            data[dtree.pk] = data.index
+        f = col.web_detail_format
+        data[col.col_name] = data[col.col_name].apply(lambda x: udf_format(x, f))
+    data.reset_index(drop=True, inplace=True)
+    data.sort_values(by=tree.pk, ascending=False, inplace=True)
+
+    web_list_cols = sorted(
+        [
+            col for col in dtree.table.cols.values()
+            if not pd.isna(col.web_list_order)
+        ],
+        key=lambda x: x.web_list_order
+    )
+    res = {
+        'cols': [
+            {
+                'name': col.col_name,
+                'web_label': col.label,
+                'data_type': col.data_type,
+                'web_obj': col.web_obj
+            }
+            for col in web_list_cols
+        ],
+        'rows': data[[col.col_name for col in web_list_cols]].to_dict(orient='records')
+    }
     con.close()
     return res
+
+
+def get_data_trees(
+        root,
+        con,
+        index_col=None,
+        index_values=(),
+        limit=None,
+        offset=None
+):
+    tree = Tree(con=con, tables=TABLES, root=root)
+    dtree = DataTree(tree=tree)
+    dtree.from_sql(
+        index_col=index_col,
+        index_values=index_values,
+        limit=limit,
+        offset=offset
+    )
+
+    return dtree
+
+
+def get_data_tree(jo):
+    con = get_con('data')
+    root = jo['root']
+    index_col = jo['indexCol']
+    index_values = jo['indexValues']
+    limit = jo['limit']
+    offset = jo['offset']
+
+    tree = Tree(con=con, tables=TABLES, root=root)
+    dtree = DataTree(tree=tree)
+    dtree.from_sql(
+        index_col=index_col,
+        index_values=set(index_values),
+        limit=limit,
+        offset=offset
+    )
+    return dtree.json_obj
 
 
 # @profile_line_by_line
@@ -166,8 +211,7 @@ def get_nested_values(
         **kwargs
 ):
     con = get_con('data')
-    tables = get_tables('data')
-    dtree = DataTree(root=root, con=con, tables=tables)
+    dtree = DataTree(root=root, con=con, tables=TABLES)
     dtree.from_sql(limit=limit, offset=offset, index_col=index_col, index_values=index_values)
 
     dtree.fill_na_with_none()
@@ -183,14 +227,40 @@ def get_nested_values(
 def get_booking_structure(in_json_obj):
     branch = in_json_obj['branch']
     con = get_con()
-    tables = get_tables('data')
-    t_branch = Tree(con=con, tables=tables)
-    dtree = DataTree(con=con, tables=tables, root=branch)
+    t_branch = Tree(con=con, tables=TABLES)
+    dtree = DataTree(con=con, tables=TABLES, root=branch)
 
     select_values = dtree.get_parents_select_values()
 
     json_obj = {'field_structure': t_branch.json_obj, 'select_values': select_values}
 
+    return json_obj
+
+
+def get_detail(in_json_obj):
+
+    root = in_json_obj['root']
+    index_col = in_json_obj['indexCol']
+    index_values = in_json_obj['indexValues']
+
+    con = get_con('data')
+    tree_row = get_tree_row(
+        root=root,
+        index_col=index_col,
+        index_values=index_values,
+        con=con
+    )
+
+    t_branch = Tree(con=con, tables=TABLES, root=root)
+
+    dtree = DataTree(tree=t_branch)
+
+    select_values = dtree.get_parents_select_values()
+
+    json_obj = {'field_structure': tree_row.json_obj,
+                'select_values': select_values}
+
+    json_obj = replace_nan_with_none(json_obj)
     return json_obj
 
 
@@ -353,9 +423,8 @@ def tree_dict_to_json(tree_dict):
 
 def gen_booking_xl_sheet_file(root, row_id=''):
     con = get_con('data')
-    tables = get_tables('data')
     timestamp = dt.now().strftime("%Y%m%d_%H%M%S_%f")
-    dtree = DataTree(root=root, con=con, tables=tables)
+    dtree = DataTree(root=root, con=con, tables=TABLES)
     if row_id != "":
         dtree.from_sql(index_col='id', index_values={row_id})
         p_name = dtree.relevant_data_set[root]["name"].values[0]
@@ -374,7 +443,8 @@ def gen_booking_xl_sheet_file(root, row_id=''):
     render_booking_xl_sheet(
         output_path=output_path,
         data_tree=dtree,
-        template_path=template_path
+        template_path=template_path,
+        con=con
     )
     con.close()
     return {
@@ -404,69 +474,57 @@ def migrate_from_xlsx(folder, schema_tags=None):
 
 
 def stash(jo):
-    root = jo['root']
-    stash_uuid = jo['stashUuid']
-    relevant_data_set = jo['relevantDataSet']
-    relevant_data_set = to_json_str(relevant_data_set)
-    comment = jo['comment']
+    stash_id = jo['stashId']
+    dtrees = jo['dataTrees']
+    stash_comment = jo['stashComment']
 
     con = get_con('data')
-
-    is_exist = check_unique({
-        'table_name': 'stash',
-        'col_name': 'stash_uuid',
-        'value': stash_uuid
-    })
-
-    if not is_exist:
-        sql = ('INSERT INTO stash (stash_uuid, root, relevant_data_set, comment) '
-               'VALUES (:stash_uuid, :root, :relevant_data_set, :comment)')
+    stash_data = to_json_str(dtrees)
+    if stash_id is None:
+        sql = ('INSERT INTO stash (stash_comment, stash_data) '
+               'VALUES (:stash_comment, :stash_data)')
         result = con.execute(
             text(sql),
             {
-                'root': root,
-                'stash_uuid': stash_uuid,
-                'relevant_data_set': relevant_data_set,
-                'comment': comment,
+                'stash_comment': stash_comment,
+                'stash_data': stash_data
             }
         )
-        stash_uuid = result.lastrowid
+        stash_id = result.lastrowid
     else:
         sql = ('UPDATE stash SET '
-               'root = :root, relevant_data_set = :relevant_data_set, comment = :comment '
-               'WHERE stash_uuid = :stash_uuid')
+               'stash_comment = :stash_comment, stash_data = :stash_data '
+               'WHERE id = :stash_id')
         con.execute(
             text(sql),
             {
-                'root': root,
-                'stash_uuid': stash_uuid,
-                'relevant_data_set': relevant_data_set,
-                'comment': comment,
+                'stash_id': stash_id,
+                'stash_comment': stash_comment,
+                'stash_data': stash_data
             }
         )
     con.close()
-    return {'stashUuid': stash_uuid}
+    return {'stashId': stash_id}
 
 
-def get_stash_list():
+def booking_from_datatree_json(dtrees):
     con = get_con('data')
-    table = get_tables('data')['stash']
+    relevant_data_set = {}
+    for dtree in dtrees:
+        root = dtree['root']
+        values = dtree['values']
+        df = pd.DataFrame(values)
+        relevant_data_set[root] = df
 
-    col_names = [
-        'id',
-        'stash_uuid',
-        'root',
-        'comment'
-    ]
-    titles = [col.label for col in table.cols if col.col_name in col_names]
-    data_types = [col.data_type for col in table.cols if col.col_name in col_names]
-
-    sql = 'SELECT * FROM stash'
-    df = pd.read_sql(sql, con=con).sort_values('id', ascending=False)[col_names]
+    dtree = DataTree(root=dtrees[0]['root'], con=con, tables=TABLES)
+    dtree.from_relevant_data_set(relevant_data_set)
+    for root in dtree.booking_sequence:
+        df = dtree.relevant_data_set[root]
+        print(root)
+        print(df)
+        print('*' * 100)
+        df.to_sql(root, con=con, if_exists='append', index=False)
     con.close()
-
-    res = df_to_ant_table_options(df=df, titles=titles, data_types=data_types)
-    return res
 
 
 def get_select_options(jo):

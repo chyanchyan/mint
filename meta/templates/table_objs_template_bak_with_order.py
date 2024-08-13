@@ -11,6 +11,7 @@ if parent_dir not in sys.path:
     sys.path.append(parent_dir)
 
 
+from mint.sys_init import get_schema
 from mint.helper_function.hf_number import is_number
 from mint.helper_function.hf_data import JsonObj
 from mint.helper_function.hf_string import dash_name_to_camel
@@ -25,13 +26,7 @@ js_data_type_map = {
 
 
 class MetaColumn(JsonObj):
-    def __init__(
-            self,
-            table_info,
-            col_info,
-            dir_table_name,
-            get_schema=lambda x: lambda: x
-    ):
+    def __init__(self, table_info, col_info, order, dir_table_name):
         super(MetaColumn, self).__init__()
 
         col_info = col_info.replace(np.nan, None).to_dict()
@@ -45,7 +40,6 @@ class MetaColumn(JsonObj):
         self.check_pk = col_info['check_pk']
         self.is_index = col_info['is_index']
         self.unique = col_info['unique']
-        self.group_unique = col_info['group_unique']
         self.foreign_key = col_info['foreign_key']
         self.fk_on_delete = col_info['fk_on_delete']
         self.fk_on_update = col_info['fk_on_update']
@@ -65,10 +59,10 @@ class MetaColumn(JsonObj):
         self.comment = col_info['comment']
         # col attr end
 
+        self.order = order
         self.dir_table_name = dir_table_name
         self.table_info = table_info
         self.col_info = col_info
-        self.get_schema = get_schema
 
         if self.default is not None:
             if is_number(self.default):
@@ -92,7 +86,7 @@ class MetaColumn(JsonObj):
     def to_model_code(self):
         if self.foreign_key is not None:
             fk_schema_tag, fk_table, fk_col = self.foreign_key.split('.')
-            fk_schema = self.get_schema(fk_schema_tag)
+            fk_schema = get_schema(fk_schema_tag)
             s_fk = ', '.join([
                 'f\'%s.%s.%s\'' % (fk_schema, fk_table, fk_col),
                 'ondelete=\'%s\'' % self.fk_on_delete,
@@ -174,16 +168,16 @@ class MetaTable(JsonObj):
             self,
             table_info: pd.Series = None,
             cols_info: pd.DataFrame = None,
-            order=None,
-            get_schema=lambda x: lambda: x
+            order=None
     ):
         super(MetaTable, self).__init__()
         if len(table_info) is None or len(cols_info) is None:
             self.class_name = None
             self.table_name = None
             self.comment = None
-            self.cols = []
+            self.cols = {}
         else:
+
             table_info = table_info.replace(np.nan, None).to_dict()
             # table attr start
             self.table_name = table_info['table_name']
@@ -194,25 +188,24 @@ class MetaTable(JsonObj):
             self.web_list_index = table_info['web_list_index']
             self.comment = table_info['comment']
             # table attr end
-            self.cols = [
-                MetaColumn(
+            self.cols = {
+                col_info['col_name']: MetaColumn(
                     table_info=table_info,
                     col_info=col_info,
-                    dir_table_name=self.table_name,
-                    get_schema=get_schema
+                    order=i,
+                    dir_table_name=self.table_name
                 )
                 for i, (col_index, col_info) in enumerate(cols_info.iterrows())
-            ]
+            }
             if pd.isna(self.schema_tag):
                 self.schema = None
             else:
                 self.schema = get_schema(self.schema_tag)
             self.cols_info = cols_info.replace(np.nan, None).to_dict(orient='records')
-            self.pk = next((col.col_name for col in self.cols if col.is_primary == 1), None)
+            self.pk = next((col.col_name for col in self.cols.values() if col.is_primary == 1), None)
             if pd.isna(self.comment):
                 self.comment = ''
         self.order = order
-        self.get_schema = get_schema
 
     def to_model_code(self):
         template_str = \
@@ -249,8 +242,10 @@ class MetaTable(JsonObj):
 
             ancestors = ', '.join(ancestors_list)
             ancestors_str = ancestors_str_template % ancestors
+        col_list = [col for k, col in self.cols.items()]
+        col_list.sort(key=lambda x: x.order)
 
-        column_block = '\n'.join([col.to_model_code() for col in self.cols])
+        column_block = '\n'.join([col.to_model_code() for col in col_list])
 
         res = template_str % {
             'class_name': dash_name_to_camel(self.table_name),
@@ -268,7 +263,7 @@ class MetaTable(JsonObj):
         except KeyError:
             exclude_attrs = []
         res = super().to_json_obj(exclude_attrs=['cols'] + exclude_attrs)
-        res['cols'] = [col.to_json_obj() for col in self.cols]
+        res['cols'] = {col_name: col.to_json_obj() for col_name, col in self.cols.items()}
         return res
 
     def to_table_info(self):
@@ -280,7 +275,7 @@ class MetaTable(JsonObj):
         return table_info
 
 
-def get_tables_from_info(tables_info, cols_info, get_schema=lambda x: x):
+def get_tables_from_info(tables_info, cols_info):
     res = {}
     table_names = tables_info[
         ~pd.isna(tables_info['schema_tag'])
@@ -319,8 +314,7 @@ def get_tables_from_info(tables_info, cols_info, get_schema=lambda x: x):
         res[table_r['table_name']] = MetaTable(
             table_info=table_r,
             cols_info=table_cols_info,
-            order=i,
-            get_schema=get_schema
+            order=i
         )
 
     return res

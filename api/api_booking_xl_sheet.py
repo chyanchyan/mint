@@ -31,14 +31,14 @@ def apply_conditional_format(ws_src, cell_src, ws_target, cell_target):
             break
 
 
-def apply_data_validation(sheet, cell, col_obj, formula1):
+def apply_data_validation(sheet, cell, col, formula1):
 
     dv = DataValidation(
         type="list",
         formula1=formula1,
         showDropDown=False,
         allowBlank=False,
-        error=f'该"{col_obj.label}"不存在，请重新输入或选择，或前往网页新增选项',
+        error=f'该"{col.label}"不存在，请重新输入或选择，或前往网页新增选项',
         errorTitle='输入值不存在',
         prompt='请选择列表内值',
         promptTitle='请选择列表内值',
@@ -101,24 +101,24 @@ def fill_table(
 
     parent_table_data_start_row = 8
 
-    # get col list
     if not show_non_display_name:
-        col_list = sorted([
-            col_name for col_name in table.cols
-            if table.cols[col_name].web_visible or
-            table.cols[col_name].table_name == 'auto_name'
-        ], key=lambda x: table.cols[x].order)
+        col_list = [
+            col for col in table.cols
+            if col.web_visible or
+            col.table_name == 'auto_name'
+        ]
     else:
-        col_list = sorted([
-            col_name for col_name in table.cols
-            if table.cols[col_name].web_visible
-        ], key=lambda x: table.cols[x].order)
+        col_list = [
+            col for col in table.cols
+            if col.web_visible
+        ]
 
     col_list = [
-        col_name for col_name in col_list
-        if not table.cols[col_name].foreign_key or  # 引用列为None，或
-           pd.isna(table.cols[col_name].foreign_key) or # 引用列为nan，或
-           table.cols[col_name].foreign_key.split('.')[1] != root   # 若为子表，非引用根表的列
+        col for col in col_list
+        if (not col.foreign_key or  # 引用列为None，或
+           pd.isna(col.foreign_key) or # 引用列为nan，或
+           col.foreign_key.split('.')[1] != root)
+        or not (col.naming_field_order is None or pd.isna(col.naming_field_order)) # 排除命名字段
     ]
 
     # fill table label
@@ -135,90 +135,104 @@ def fill_table(
 
     # fill root cols
     value_row_index = int(start_value_row_index)
-    for col_idx, col_name in enumerate(col_list):
-        col_obj = table.cols[col_name]
+    for col_idx, col in enumerate(col_list):
         is_nullable = (
-            col_obj.nullable == 1 and
+            col.nullable == 1 and
             (
-                col_obj.foreign_key is None or
-                pd.isna(col_obj.foreign_key)
+                col.foreign_key is None or
+                pd.isna(col.foreign_key)
             )
         )
-        col_label = ['*', ''][is_nullable] + col_obj.label
+        col_label = ['*', ''][is_nullable] + col.label
         # cell validation
-        if col_obj.foreign_key and not pd.isna(col_obj.foreign_key):
-            db_name, parent_table_name, fk = col_obj.foreign_key.split('.')
-            if parent_table_name == root:   # 若为子表引用根表，则跳过
-                continue
-            parent_table_obj = tables[parent_table_name]
-            select_values_rows_count = len(select_values[parent_table_name])
-            parent_visible_col_names = [
-                col.col_name for col in tables[parent_table_name].cols.values()
-                if col.web_visible or col.table_name == 'auto_name'
-            ]
-            parent_visible_col_names = sorted(
-                parent_visible_col_names,
-                key=lambda x: parent_table_obj.cols[x].order
-            )
-            try:
-                fk_idx = parent_visible_col_names.index(fk) + 4
-            except ValueError:
-                print(fk)
-                raise ValueError
-            col_letter = get_column_letter(fk_idx)
+        if col.foreign_key and not pd.isna(col.foreign_key):
+            db_name, parent_table_name, fk = col.foreign_key.split('.')
+            if parent_table_name == root:   # 若为子表引用根表，则引用根表数据
 
-            formula1 = f'=bks_{parent_table_obj.label}!${col_letter}${parent_table_data_start_row}:' \
-                       f'${col_letter}${str(select_values_rows_count + parent_table_data_start_row + 1)}'
+                formula1 = (
+                    f'=$E${[
+                               col.col_name 
+                               for col in filter(lambda x: x.web_visible == 1, tables[parent_table_name].cols)
+                           ].index(fk) + 4}'
+                )
+            else:
+                parent_table_obj = tables[parent_table_name]
+                select_values_rows_count = len(select_values[parent_table_name])
+                parent_visible_col_names = [
+                    col.col_name for col in tables[parent_table_name].cols
+                    if col.web_visible or col.table_name == 'auto_name'
+                ]
+                try:
+                    fk_idx = parent_visible_col_names.index(fk) + 4
+                except ValueError:
+                    print(fk)
+                    raise ValueError
+                col_letter = get_column_letter(fk_idx)
+
+                formula1 = f'=bks_{parent_table_obj.label}!${col_letter}${parent_table_data_start_row}:' \
+                           f'${col_letter}${str(select_values_rows_count + parent_table_data_start_row + 1)}'
 
         if direction == 'vertical':
             cell_col = ws_booking.cell(row=dst_row + col_idx, column=dst_col + 3, value=col_label)
-            ws_booking.cell(row=dst_row + col_idx, column=dst_col + 2, value=col_obj.col_name)
+            ws_booking.cell(row=dst_row + col_idx, column=dst_col + 2, value=col.col_name)
             cell_default = ws_booking.cell(row=dst_row + col_idx, column=dst_col + 4)
 
-            if col_obj.table_name == 'auto_name':
-                auto_naming_cols = [(i, col) for i, col in enumerate(col_list) if not pd.isna(table.cols[col].naming_field_order)]
+            if col.table_name == 'auto_name':
+                auto_naming_cols = [
+                    (i, col)
+                    for i, col in enumerate(col_list)
+                    if not (pd.isna(col.naming_field_order) or col.naming_field_order is None)
+                ]
                 auto_naming_col_addrs = [f'E{dst_row + item[0]}' for item in auto_naming_cols]
                 default_value = '=' + '&"-"&'.join(auto_naming_col_addrs)
                 apply_cell_format(cell_default, cell_formats['auto_name'])
             else:
-                default_value = col_obj.default
+                default_value = col.default
             cell_default.value = default_value
 
-            if col_obj.foreign_key and not pd.isna(col_obj.foreign_key):
-                db_name, foreign_table, foreign_key = col_obj.foreign_key.split('.')
+            if col.foreign_key and not pd.isna(col.foreign_key):
+                db_name, foreign_table, foreign_key = col.foreign_key.split('.')
                 ws_booking.cell(
                     row=dst_row + col_idx,
                     column=dst_col + 5,
                     value='fk=' + tables[foreign_table].label
                 )
             if values:
-                if len(values[col_name]) > 0:
-                    cell_default.value = values[col_name][0]
+                if len(values[col.col_name]) > 0:
+                    cell_default.value = values[col.col_name][0]
 
         elif direction == 'horizontal':
             cell_col = ws_booking.cell(row=dst_row, column=dst_col + col_idx + 3, value=col_label)
-            ws_booking.cell(row=dst_row + 1, column=dst_col + col_idx + 3, value=col_obj.col_name)
+            ws_booking.cell(row=dst_row + 1, column=dst_col + col_idx + 3, value=col.col_name)
             cell_default = ws_booking.cell(row=dst_row + 2, column=dst_col + col_idx + 3)
 
-            if col_obj.table_name == 'auto_name':
-                auto_naming_cols = [(i, col) for i, col in enumerate(col_list) if not pd.isna(table.cols[col].naming_field_order)]
+            if col.table_name == 'auto_name':
+                auto_naming_cols = [(i, col) for i, col in enumerate(col_list) if not pd.isna(col.naming_field_order)]
                 auto_naming_col_addrs = [f'{get_column_letter(dst_col + item[0] + 3)}{dst_row + 2}' for item in auto_naming_cols]
                 default_value = '=' + '&"-"&'.join(auto_naming_col_addrs)
                 apply_cell_format(cell_default, cell_formats['auto_name'])
             else:
-                default_value = col_obj.default
+                if not pd.isna(col.foreign_key) and col.foreign_key is not None:
+                    db_name, foreign_table, foreign_key = col.foreign_key.split('.')
+                    if foreign_table != root:
+                        default_value = col.default
+                    else:
+                        default_value = formula1
+                else:
+                    default_value = col.default
             cell_default.value = default_value
 
-            if col_obj.foreign_key and not pd.isna(col_obj.foreign_key):
-                db_name, foreign_table, foreign_key = col_obj.foreign_key.split('.')
-                ws_booking.cell(
-                    row=dst_row - 1,
-                    column=dst_col + col_idx + 3,
-                    value='fk=' + tables[foreign_table].label
-                )
+            if col.foreign_key and not pd.isna(col.foreign_key):
+                db_name, foreign_table, foreign_key = col.foreign_key.split('.')
+                if foreign_table != root:
+                    ws_booking.cell(
+                        row=dst_row - 1,
+                        column=dst_col + col_idx + 3,
+                        value='fk=' + tables[foreign_table].label
+                    )
             if values:
                 try:
-                    col_values = values[col_name]
+                    col_values = values[col.col_name]
 
                     for r, value in enumerate(col_values.values()):
                         cell_value = ws_booking.cell(row=dst_row + 2 + r + 1, column=dst_col + col_idx + 3, value=value)
@@ -226,24 +240,26 @@ def fill_table(
                             ws_booking.cell(row=dst_row + 2 + r + 1, column=dst_col, value=f'row{value_row_index}')
                             apply_cell_format(
                                 cell_src=cell_value,
-                                cell_target=cell_formats[col_obj.web_obj]
+                                cell_target=cell_formats[col.web_obj]
                             )
                             apply_conditional_format(
                                 ws_src=ws_booking,
                                 cell_src=cell_value,
                                 ws_target=ws_cell_format,
-                                cell_target=cell_formats[col_obj.web_obj]
+                                cell_target=cell_formats[col.web_obj]
                             )
 
-                            if col_obj.foreign_key and not pd.isna(col_obj.foreign_key):
-                                apply_data_validation(sheet=ws_booking, cell=cell_value, col_obj=col_obj,
-                                                      formula1=formula1)
+                            if col.foreign_key and not pd.isna(col.foreign_key):
+                                db_name, foreign_table, foreign_key = col.foreign_key.split('.')
+                                if foreign_table != root:
+                                    apply_data_validation(sheet=ws_booking, cell=cell_value, col=col,
+                                                          formula1=formula1)
 
-                            if col_obj.web_obj == 'radio':
+                            if col.web_obj == 'radio':
                                 apply_radio_validation(
                                     sheet=ws_booking, cell=cell_value
                                 )
-                            if col_obj.table_name == 'auto_name':
+                            if col.table_name == 'auto_name':
                                 apply_cell_format(cell_value, cell_formats['auto_name'])
 
                             value_row_index += 1
@@ -253,7 +269,7 @@ def fill_table(
         else:
             raise ValueError
 
-        if col_obj.table_name == 'auto_name':
+        if col.table_name == 'auto_name':
             apply_cell_format(
                 cell_src=cell_col,
                 cell_target=cell_formats['auto_name'])
@@ -267,7 +283,7 @@ def fill_table(
                 cell_target=cell_formats['column'])
             apply_cell_format(
                 cell_src=cell_default,
-                cell_target=cell_formats[col_obj.web_obj]
+                cell_target=cell_formats[col.web_obj]
             )
 
         # cell conditional format
@@ -275,19 +291,19 @@ def fill_table(
             ws_src=ws_booking,
             cell_src=cell_default,
             ws_target=ws_cell_format,
-            cell_target=cell_formats[col_obj.web_obj]
+            cell_target=cell_formats[col.web_obj]
         )
 
         # cell validation
-        if col_obj.foreign_key and not pd.isna(col_obj.foreign_key):
+        if col.foreign_key and not pd.isna(col.foreign_key):
             apply_data_validation(
                 sheet=ws_booking,
                 cell=cell_default,
-                col_obj=col_obj,
+                col=col,
                 formula1=formula1
             )
 
-        if col_obj.web_obj == 'radio':
+        if col.web_obj == 'radio':
             apply_radio_validation(
                 sheet=ws_booking,
                 cell=cell_default
@@ -296,7 +312,7 @@ def fill_table(
     return value_row_index
 
 
-def render_booking_xl_sheet(output_path, template_path, data_tree: DataTree, con):
+def render_booking_xl_sheet(output_path, template_path, data_tree: DataTree):
 
     tables = data_tree.tables
     root = data_tree.root

@@ -89,7 +89,7 @@ class Tree(JsonObj):
         JsonObj.__init__(self)
 
         ref_cols = [
-            col for col in self.table.cols.values() if not pd.isna(col.foreign_key)
+            col for col in self.table.cols if not pd.isna(col.foreign_key)
         ]
 
         for ref_col in ref_cols:
@@ -114,12 +114,12 @@ class Tree(JsonObj):
             reffed_table_and_cols = []
             for child_root, table_obj in tables.items():
                 if child_root != self.root:
-                    for ref, col_obj in table_obj.cols.items():
+                    for col_obj in table_obj.cols:
                         fk = col_obj.foreign_key
                         if not pd.isna(fk):
                             schema, reffed_table_name, reffed = fk.split('.')
                             if reffed_table_name == self.root:
-                                reffed_table_and_cols.append((child_root, ref, reffed))
+                                reffed_table_and_cols.append((child_root, col_obj.col_name, reffed))
             for child_root, ref, reffed in reffed_table_and_cols:
                 child = Tree(
                     con=con,
@@ -138,7 +138,7 @@ class Tree(JsonObj):
         self.reading_sequence = [item for item in self.booking_sequence.__reversed__()]
 
         self.node_names = self.get_node_names()
-        self.sort_cols()
+        # self.sort_cols()
 
     def __bool__(self):
         if self.root:
@@ -198,29 +198,9 @@ class Tree(JsonObj):
 
         return res
 
-    def sort_cols(self):
-        cols = self.table.cols
-        col_orders = dict(zip(cols.keys(), [col.order for col in cols.values()]))
-
-        p_orders = {parent.ref: cols[parent.ref].order for parent in self.parents}
-        sorted_orders = sorted([i for i in p_orders.values()])
-        p_orders = {key: sorted_orders.index(value) for key, value in p_orders.items()}
-
-        col_orders = {key: value for key, value in col_orders.items()
-                      if key not in p_orders.keys()}
-
-        sorted_orders = sorted([i for i in col_orders.values()])
-        col_orders = {key: sorted_orders.index(value) + len(p_orders) for key, value in col_orders.items()}
-
-        for key, order in p_orders.items():
-            self.table.cols[key].order = order
-
-        for key, order in col_orders.items():
-            self.table.cols[key].order = order
-
     def json_obj_base(self):
         json_obj = self.to_json_obj_raw(
-            include_attrs=['root', 'pk', 'ref', 'reffed', 'parents', 'children']
+            include_attrs=['root', 'ref', 'reffed', 'parents', 'children']
         )
         json_obj['parents'] = []
         json_obj['children'] = []
@@ -350,13 +330,13 @@ class DataTree(Tree):
         if relevant_data_set is None:
             relevant_data_set = dict(zip(
                 self.node_names,
-                [pd.DataFrame(columns=self.tables[node_name].cols.keys())
+                [pd.DataFrame(columns=[col.col_name for col in self.tables[node_name].cols])
                  for node_name in self.node_names]
             ))
         try:
             self.data = relevant_data_set[self.root]
         except KeyError:
-            self.data = pd.DataFrame(columns=self.table.cols.keys())
+            self.data = pd.DataFrame(columns=[col.col_name for col in self.table.cols])
         self.relevant_data_set = relevant_data_set
 
     def __len__(self):
@@ -438,24 +418,33 @@ class DataTree(Tree):
     def from_sql(
             self,
             index_col: str = None,
-            index_values: Set[str] = (),
+            index_values: Set[str] = None,
             limit=None,
             offset=None
     ):
         # root data
         root_schema = self.table.schema
-        if index_col is None:
+        if index_col is None and index_values is None:
             where_str = ''
         else:
+            if index_col is None:
+                index_col = self.table.pk
+            if index_values is not None and len(index_values) == 0:
+                limit = 0
             values_str = ', '.join([f'"{index_value}"' for index_value in index_values])
             where_str = f'WHERE `{index_col}` in ({values_str})'
 
-        if limit is None or offset is None:
-            limit_offset_str = ''
+        if limit is None:
+            limit_str = ''
         else:
-            limit_offset_str = f'limit {str(limit)} offset {str(offset)}'
+            limit_str = f'limit {str(limit)}'
 
-        sql = f'SELECT * FROM {root_schema}.{self.root} {where_str} {limit_offset_str}'
+        if offset is None:
+            offset_str = ''
+        else:
+            offset_str = f'offset {str(offset)}'
+
+        sql = f'SELECT * FROM {root_schema}.{self.root} {where_str} {limit_str} {offset_str}'
         root_data = pd.read_sql(sql=sql, con=self.con, index_col=self.table.pk)
         if len(root_data) == 0:
             print(f'empty result for root: "{self.root}" \n'
@@ -463,7 +452,7 @@ class DataTree(Tree):
                   f'with values in {index_values}')
             relevant_data_set = dict(zip(
                 self.node_names,
-                [pd.DataFrame(columns=self.tables[node_name].cols.keys())
+                [pd.DataFrame(columns=[col.col_name for col in self.tables[node_name].cols])
                  for node_name in self.node_names]
             ))
         else:
@@ -520,7 +509,7 @@ class DataTree(Tree):
         if relevant_data_set_copy is None:
             relevant_data_set_copy = dict(zip(
                 self.node_names,
-                [pd.DataFrame(columns=self.tables[node_name].cols.keys())
+                [pd.DataFrame(columns=[col.col_name for col in self.tables[node_name].cols])
                  for node_name in self.node_names]
             ))
 
@@ -528,7 +517,7 @@ class DataTree(Tree):
         if len(root_data) == 0:
             relevant_data_set_copy = dict(zip(
                 self.node_names,
-                [pd.DataFrame(columns=self.tables[node_name].cols.keys())
+                [pd.DataFrame(columns=[col.col_name for col in self.tables[node_name].cols])
                  for node_name in self.node_names]
             ))
         else:
@@ -542,13 +531,13 @@ class DataTree(Tree):
             for node_name in self.reading_sequence:
                 if node_name not in relevant_data_set_copy:
                     relevant_data_set_copy[node_name] = pd.DataFrame(
-                        columns=[col_name for col_name, _ in self.tables[node_name].cols.items()]
+                        columns=[col.col_name for col in self.tables[node_name].cols]
                     )
                     continue
                 if node_name not in values_map:
                     continue
                 where_str_list = []
-                data = pd.DataFrame(columns=self.table.cols.keys())
+                data = pd.DataFrame(columns=[col.col_name for col in self.table.cols])
                 for col, tree_values in values_map[node_name].items():
                     values = tree_values['values']
                     values_str = ', '.join(['"%s"' % value for value in values])
@@ -639,18 +628,17 @@ class DataTree(Tree):
         json_obj = self.to_json_obj_raw(
             include_attrs=['root', 'ref', 'reffed', 'parents', 'children']
         )
-        json_obj['pk'] = self.table.pk
         json_obj['parents'] = []
         json_obj['children'] = []
         data = self.data.copy(deep=True)
-        data.replace(np.nan, None, inplace=True)
+        data = data.replace(np.nan, None)
         for parent in self.ps:
             json_obj['parents'].append(parent.json_obj_base(with_value=with_value))
         for child in self.cs:
             json_obj['children'].append(child.json_obj_base(with_value=with_value))
 
         if with_value:
-            json_obj['values'] = data.to_dict(orient='list')
+            json_obj['values'] = data.to_dict(orient='records')
 
         json_obj['table'] = self.table.to_json_obj()
 
@@ -664,12 +652,12 @@ class DataTree(Tree):
     def nested_values(self, ref_group=None, ignore_ref_col=None, full_detail=False):
         if full_detail:
             col_items = [
-                item for item in self.table.cols.items()
+                item for item in self.table.cols
                 if not item[1].col_name == ignore_ref_col
             ]
         else:
             col_items = [
-                item for item in self.table.cols.items()
+                item for item in self.table.cols
                 if not pd.isna(item[1].web_list_order)
                 and not item[1].col_name == ignore_ref_col
             ]
@@ -725,7 +713,7 @@ class DataTree(Tree):
         if not isinstance(data, pd.DataFrame):
             data = self.data
         col_items = [
-            item for item in self.table.cols.items()
+            item for item in self.table.cols
             if not pd.isna(item[1].web_list_order)
             and item[1].col_name != parent_ref
         ]
@@ -777,6 +765,7 @@ class DataTree(Tree):
         }
 
         return res
+
 
     def get_all_parents_with_full_value(self):
         res = {}
@@ -835,7 +824,7 @@ class DataTree(Tree):
 
             # mark child auto-name
             naming_cols = sorted([
-                col_obj for col_name, col_obj in child.table.cols.items()
+                col_obj for col_obj in child.table.cols
                 if not pd.isna(col_obj.naming_field_order)
             ], key=lambda x: x.naming_field_order)
             if len(naming_cols) > 0:
@@ -849,15 +838,11 @@ class DataTree(Tree):
             relevant_data_set[child.root] = child_df
 
         for parent_root, parent in self.get_all_parents().items():
-            try:
-                parent_sheet_name = f'bks_{parent.table.label}'
-            except KeyError:
-                print(f'no sheet for root "{parent_root}"')
-                continue
-
+            parent_sheet_name = f'bks_{parent.table.label}'
             try:
                 parent_df_raw = dfs[parent_sheet_name]
             except KeyError:
+                print(f'no sheet for root "{parent_root}"')
                 continue
             parent_df = get_crop_from_df(
                 df=parent_df_raw,
@@ -869,9 +854,11 @@ class DataTree(Tree):
             )
 
             # mark auto name
-            naming_cols = [(col_name, col.naming_field_order)
-                             for col_name, col in parent.table.cols.items()
-                             if not pd.isna(col.naming_field_order)]
+            naming_cols = [
+                (col.col_name, col.naming_field_order)
+                for col in parent.table.cols
+                if not pd.isna(col.naming_field_order)
+            ]
             if len(naming_cols) > 0:
                 naming_cols = [col for col, order in sorted(naming_cols, key=lambda x: x[1])]
 
@@ -977,6 +964,35 @@ class DataTree(Tree):
             pin += len(child_values) + 1
 
         wb.save(pth)
+
+
+def get_right_angle_trees_from_tree_from_tree(tree: Tree, res=None, include_root=True):
+    if include_root:
+        if res is None:
+            res = [tree]
+        else:
+            for item in res:
+                if item.root == tree.root:
+                    break
+            else:
+                res.append(tree)
+
+    if tree.parents:
+        for parent in tree.parents:
+            get_right_angle_trees_from_tree_from_tree(parent, res)
+    if tree.children:
+        for child in tree.children:
+            get_right_angle_trees_from_tree_from_tree(child, res, include_root=False)
+    return res
+
+
+def get_flattened_tree_list_from_tree_list(tree_list: List[Tree], res=None):
+    if res is None:
+        res = []
+    for tree in tree_list:
+        res.append(tree)
+        get_flattened_tree_list_from_tree_list(tree.children, res)
+    return res
 
 
 if __name__ == '__main__':

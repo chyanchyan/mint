@@ -12,12 +12,27 @@ from mint.helper_function.hf_data import JsonObj
 from mint.helper_function.hf_string import to_json_str
 
 
-class AntdTableColumn(JsonObj):
-    def __init__(self, title, data_index, key):
-        super().__init__(self)
-        self.title = title
-        self.dataIndex = data_index
-        self.key = key
+class AntdTableColumn(dict):
+    def __init__(self, col_obj, key):
+        items = {
+            'key': key,
+            'dataIndex': col_obj.col_name,
+            'title': col_obj.label,
+            'dataType': col_obj.data_type
+        }
+        super().__init__(items)
+
+
+class AntdTableColumns(list):
+    def __init__(self, col_objs):
+        super().__init__(
+            [
+                AntdTableColumn(
+                    col_obj=col_obj,
+                    key=key
+                ) for key, col_obj in enumerate(col_objs)
+            ]
+        )
 
 
 class AntdDataSource(list):
@@ -36,45 +51,5 @@ class AntdDataSource(list):
 class AntdTableConfig(JsonObj):
     def __init__(self, columns: List[AntdTableColumn], records: list):
         super().__init__(self)
-        self.columns = [column.to_json_obj() for column in columns]
+        self.columns = columns
         self.dataSource = AntdDataSource(records=records)
-
-
-
-def test():
-    columns = [
-        AntdTableColumn('type', 'type', 1),
-        AntdTableColumn('value', 'value', 2),
-    ]
-    records = [
-        {
-            'type': '授信',
-            'value': 3
-        },
-        {
-            'type': 'abs',
-            'value': 5
-        },
-        {
-            'type': '非标',
-            'value': 10
-        },
-        {
-            'type': '融担',
-            'value': 20
-        },
-        {
-            'type': '其他',
-            'value': 30
-        },
-    ]
-    res = {
-        'total': '3.00%',
-        'table_config': AntdTableConfig(columns=columns, records=records).to_json_obj()
-    }
-
-    print(to_json_str(res))
-
-
-if __name__ == '__main__':
-    test()

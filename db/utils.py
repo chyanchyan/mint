@@ -2,11 +2,23 @@ import traceback
 from copy import copy
 from datetime import datetime as dt
 import pandas as pd
+import numpy as np
 import pymysql
 import sqlalchemy.exc
 from sqlalchemy import create_engine
-from dateutil.relativedelta import relativedelta
-from mint.helper_function.hf_func import profile_line_by_line
+
+import os
+import sys
+
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
+
+if parent_dir not in sys.path:
+    sys.path.append(parent_dir)
+
+from mint.globals import *
+from mint.meta.table_objs import get_tables_from_info
+
 
 def db_get_schema(schema_tag, sys_mode, project_name):
     if sys_mode == 'PROD':
@@ -144,10 +156,7 @@ def db_get_first_delta_to_null_rows_and_all_rest_rows(
         con=con
     )
 
-    return res
 
-
-# @profile_line_by_line
 def db_fill_change_null_value(
         df_to_fill: pd.DataFrame,
         table_name,
@@ -266,13 +275,18 @@ def db_get_df_changes(
         con,
         table_name: str,
         index: str,
-        st_date: dt,
-        exp_date: dt,
         delta_col: str,
         to_col: str,
         date_col: str,
+        st_date: dt = None,
+        exp_date: dt = None,
         filter_sql: str = None
 ):
+    if st_date is None:
+        st_date = dt.strptime('1970-01-01', '%Y-%m-%d')
+    if exp_date is None:
+        exp_date = dt.now()
+
     sql_less_max = f"""
         SELECT t1.*
         FROM `{table_name}` t1
@@ -313,5 +327,42 @@ def db_get_df_changes(
     df_less_max[delta_col] = df_less_max[to_col]
     res = pd.concat([df_less_max, df_rest]).sort_values([index, date_col]).reset_index(drop=True)
 
+    return res
+
+
+def get_con(schema_tag):
+    engine, con, url = db_connect_db(
+        **DB_PARAMS,
+        schema=db_get_schema(
+            schema_tag=schema_tag,
+            sys_mode=SYS_MODE,
+            project_name=PROJECT_NAME
+        )
+    )
+    return con
+
+
+def get_tables(schema_tag: str = None):
+    if schema_tag is not None:
+        filter_sql = f' where `schema_tag` = "{schema_tag}" or `schema_tag` is Null'
+    else:
+        filter_sql = ''
+    con = get_con('core')
+    tables_info = pd.read_sql(
+        sql='select * from tables' + filter_sql,
+        con=con
+    ).replace(np.nan, None)
+    table_names = tables_info['table_name'].tolist()
+    table_names_sql_filter = ', '.join([f'"{table_name}"' for table_name in table_names])
+    cols_info = pd.read_sql(
+        sql=f'select * from cols where `table_name` in ({table_names_sql_filter})',
+        con=con
+    ).replace(np.nan, None)
+    res = get_tables_from_info(
+        tables_info=tables_info,
+        cols_info=cols_info,
+        get_schema=lambda x: db_get_schema(x, SYS_MODE, PROJECT_NAME)
+    )
+    con.close()
     return res
 

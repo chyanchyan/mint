@@ -1,5 +1,4 @@
 import os.path
-from datetime import datetime as dt
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import text, create_engine
 
@@ -15,7 +14,7 @@ if parent_dir not in sys.path:
 from mint.sys_init import *
 from mint.helper_function.wrappers import sub_wrapper
 from mint.helper_function.hf_file import snapshot, mkdir
-from mint.helper_function.hf_string import list_to_attr_code
+
 from mint.helper_function.hf_db import export_xl
 
 
@@ -57,66 +56,6 @@ def snapshot_models():
     snapshot(src_path='models.py', dst_folder=PATH_MODEL_SNAPSHOT, auto_timestamp=True, comments='')
 
 
-@sub_wrapper(SYS_MODE)
-def refresh_table_obj():
-    template_pth = 'templates/table_objs_template.py'
-    output_pth = 'table_objs.py'
-    code = open(template_pth, 'r').readlines()
-
-    st_mark = ' ' * 8 + '# col attr start\n'
-    ed_mark = ' ' * 8 + '# col attr end\n'
-    code = list_to_attr_code(
-        code_template=code,
-        attr_list=DB_COLS_INFO.columns.to_list(),
-        df_var_name='col_info',
-        st_mark=st_mark,
-        ed_mark=ed_mark,
-        intent_blocks=2
-    )
-    st_mark = ' ' * 12 + '# table attr start\n'
-    ed_mark = ' ' * 12 + '# table attr end\n'
-    code = list_to_attr_code(
-        code_template=code,
-        attr_list=DB_TABLES_INFO.columns.to_list(),
-        df_var_name='table_info',
-        st_mark=st_mark,
-        ed_mark=ed_mark,
-        intent_blocks=3
-    )
-    f = open(output_pth, 'w')
-    f.writelines(code)
-    f.close()
-
-
-@sub_wrapper(SYS_MODE)
-def refresh_models():
-    # load models file template
-    f = open('templates/models_template.py', encoding='utf-8', mode='r')
-    rs = f.readlines()
-    st_str = '# table class start\n'
-    ed_str = '# table class end\n'
-    pre_block, post_block = rs[: rs.index(st_str) + 1], rs[rs.index(ed_str):]
-
-    if 'mint' in __name__.split('.'):
-        exec('from .meta.table_objs import get_tables')
-    else:
-        exec('from mint.meta.table_objs import get_tables')
-    tables = eval('get_tables(tables_info=DB_TABLES_INFO, cols_info=DB_COLS_INFO)')
-    tables_list = [v for k, v in tables.items()]
-    tables_list.sort(key=lambda x: x.order)
-    table_blocks = []
-    for table in tables_list:
-        table_blocks.append(table.to_model_code())
-        table_blocks.extend(['\n', '\n'])
-
-    res = pre_block + table_blocks + post_block
-
-    # write to file
-    f = open('models.py', encoding='utf-8', mode='w')
-    f.writelines(res)
-    f.close()
-
-
 def snapshot_database(schema_tags=None, comments=''):
     if schema_tags is None:
         schema_tags = get_schema_tags()
@@ -143,18 +82,6 @@ def snapshot_database(schema_tags=None, comments=''):
         )
 
 
-@sub_wrapper(SYS_MODE)
-def create_tables():
-    if 'mint' in __name__.split('.'):
-        exec('from .meta import models')
-    else:
-        exec('from mint.meta import models')
-    engine, con, url = get_engine_con_url()
-    engine = create_engine(url)
-    con.close()
-    print("creating tables")
-    exec('models.Base.metadata.create_all(engine)')
-    print("tables created")
 
 
 @sub_wrapper(SYS_MODE)

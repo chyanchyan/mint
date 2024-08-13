@@ -4,7 +4,7 @@ import socket
 
 import configparser
 
-PATH_ROOT = os.path.dirname(os.path.dirname(__file__))
+PATH_ROOT = os.path.dirname(__file__)
 PATH_PROJECT = os.path.dirname(PATH_ROOT)
 
 PATH_ADMIN_INI = os.path.join(os.path.dirname(PATH_ROOT), 'admin.ini')
@@ -33,7 +33,6 @@ PROJECT_NAME = CONF_CONF.get('SYS', 'project_name')
 HOST_NAME = socket.gethostname()
 TEST_HOST_NAMES = CONF_ADMIN.get('SYS', 'test_host_names').split()
 
-print(f'host name: {HOST_NAME}')
 if HOST_NAME in TEST_HOST_NAMES:
     SYS_MODE = 'TEST'
 else:
@@ -48,3 +47,4 @@ DB_CHARSET = CONF_CONF.get(SYS_MODE, 'db_charset')
 
 DB_PARAMS = dict(CONF_CONF[SYS_MODE].items())
 DB_PARAMS.update(dict(CONF_ADMIN[SYS_MODE].items()))
+
