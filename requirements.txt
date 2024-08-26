@@ -8,3 +8,4 @@ mysqlclient
 pymysql
 line_profiler
 cryptography
+flask_caching

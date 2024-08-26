@@ -17,7 +17,7 @@ if parent_dir not in sys.path:
     sys.path.append(parent_dir)
 
 from mint.globals import *
-from mint.meta.table_objs import get_tables_from_info
+from ..meta.table_objs import get_tables_from_info
 
 
 def db_get_schema(schema_tag, sys_mode, project_name):
