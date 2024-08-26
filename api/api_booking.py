@@ -1,5 +1,8 @@
 import sys
 import os
+
+import pandas as pd
+
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
 
@@ -8,45 +11,8 @@ if parent_dir not in sys.path:
 
 from mint.helper_function.hf_db import dfs_to_db
 from mint.sys_init import *
-from mint.db.tree import Tree, DataTree, get_flattened_dtrees_from_dtree_list
+from mint.db.tree import Tree, DataTree, get_flattened_tree_list_from_right_angle_trees
 from mint.db.utils import get_tables
-
-
-def booking(in_json_obj):
-    # user_name = in_json_obj['user_name']
-    root = in_json_obj['data']['root']
-    data = in_json_obj['data']['data']
-    schema = get_schema('data')
-    tables = get_tables('data')
-    
-    nodes = []
-    for d in data:
-        node, parents = fetch_data_from_dict(d=d, tables=tables)
-        nodes.append(node)
-        nodes.extend(parents)
-
-    d_dfs_ = merge_booking_nodes_rows(nodes)
-    d_dfs = {}
-    for node_root, d_rows in d_dfs_.items():
-        if len(d_rows) > 0:
-            d_dfs[node_root] = dict_to_df(d=d_rows)
-
-    for node_root, df in d_dfs.items():
-        df = df.replace(to_replace="", value=None)
-        print(df)
-        table = tables[node_root]
-        for col in df.columns:
-            if table.cols[col].unique or table.cols[col].foreign_key:
-                df = df.drop_duplicates(subset=df.columns)
-        d_dfs[node_root] = df
-    print(d_dfs)
-    con = get_con()
-    tree = Tree(con=con, tables=tables, root=root)
-
-    d_dfs = mark_child_name(d_dfs=d_dfs, tree=tree)
-    d_dfs = strip_values(d_dfs=d_dfs)
-
-    dfs_to_db(d_dfs=d_dfs, tree=tree, schema=schema)
 
 
 def get_project_level_change_init_rows(df_p: pd.DataFrame, df_l: pd.DataFrame):
@@ -78,8 +44,7 @@ def get_project_level_change_init_rows(df_p: pd.DataFrame, df_l: pd.DataFrame):
     df_pl['comment'] = 'init'
     df_pl['rate_delta'] = df_pl['l.rate']
     df_pl['rate_to'] = df_pl['l.rate']
-    gs = df_pl.groupby('l.name')
-    df_pl['notional_delta'] = gs['p.notional'] * gs['l.weights'] / gs['l.weights'].sum()
+    df_pl['notional_delta'] = df_pl['p.notional'] * df_pl['l.weights'] / df_pl['l.weights'].sum()
     df_pl['notional_to'] = df_pl['notional_delta']
 
     return df_pl[plnc_cols], df_pl[plrc_cols]
@@ -122,20 +87,28 @@ def booking_from_xl_file(con, root, file_path, tables):
     )
 
 
-def booking_from_datatree_list_json(con, root, dtree_list):
+def booking_from_relevant_data_set_json(jo):
+
+    con = get_con('data')
     tables = get_tables('data')
-    relevant_data_set = {}
-
-    dtrees = get_flattened_dtrees_from_dtree_list(dtree_list=dtree_list)
-
-    for dtree in dtrees:
-        relevant_data_set[dtree['root']] = pd.DataFrame(dtree['values'])
+    root = jo['root']
+    relevant_data_set_json = jo['relevantDataSet']
+    relevant_data_set = {
+        table_root: pd.DataFrame(
+            data=values,
+            columns=[col.col_name for col in tables[table_root].cols]
+        )
+        for table_root, values in relevant_data_set_json.items()
+    }
 
     if root == 'project':
         df_p = relevant_data_set['project']
         df_l = relevant_data_set['project_level']
         # add init project change
-        df_plnc, df_plrc = get_project_level_change_init_rows(df_p=df_p, df_l=df_l)
+        df_plnc, df_plrc = get_project_level_change_init_rows(
+            df_p=df_p,
+            df_l=df_l
+        )
         relevant_data_set['project_level_notional_change'] = df_plnc
         relevant_data_set['project_level_rate_change'] = df_plrc
 
@@ -143,7 +116,9 @@ def booking_from_datatree_list_json(con, root, dtree_list):
     dtree.from_relevant_data_set(relevant_data_set)
     for root in dtree.booking_sequence:
         df = dtree.relevant_data_set[root]
+        print('-' * 50)
         print(root)
+        print('-' * 50)
         print(df)
         print('*' * 100)
         df.to_sql(root, con=con, if_exists='append', index=False)

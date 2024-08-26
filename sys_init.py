@@ -181,6 +181,7 @@ DB_SCHEMAS_INFO, DB_TABLES_INFO, DB_COLS_INFO = refresh_table_info_to_db()
 refresh_models()
 refresh_table_obj()
 create_tables()
+TABLES = get_tables('data')
 print(f'host name: {HOST_NAME}')
 
 

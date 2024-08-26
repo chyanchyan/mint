@@ -15,6 +15,7 @@ if parent_dir not in sys.path:
 from mint.helper_function.wrappers import api_status_wrapper
 from mint.helper_function.hf_data import *
 from mint.api.api_functions import *
+from mint.api.api_booking import booking_from_relevant_data_set_json
 
 app = Flask(__name__)
 CORS(app=app)
@@ -117,10 +118,7 @@ def api_get_stash_list():
 @api_status_wrapper
 def api_booking():
     jo = get_in_json_obj(req=request)
-    try:
-        booking_from_datatree_json(jo)
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    booking_from_relevant_data_set_json(jo)
     return
 
 

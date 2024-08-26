@@ -624,7 +624,7 @@ class DataTree(Tree):
             c.from_relevant_data_set(self.relevant_data_set)
             yield c
 
-    def json_obj_base(self, with_value=False):
+    def json_obj_base(self, with_value=False, with_table=True):
         json_obj = self.to_json_obj_raw(
             include_attrs=['root', 'ref', 'reffed', 'parents', 'children']
         )
@@ -633,20 +633,24 @@ class DataTree(Tree):
         data = self.data.copy(deep=True)
         data = data.replace(np.nan, None)
         for parent in self.ps:
-            json_obj['parents'].append(parent.json_obj_base(with_value=with_value))
+            json_obj['parents'].append(parent.json_obj_base(with_value=with_value, with_table=with_table))
         for child in self.cs:
-            json_obj['children'].append(child.json_obj_base(with_value=with_value))
+            json_obj['children'].append(child.json_obj_base(with_value=with_value, with_table=with_table))
 
         if with_value:
             json_obj['values'] = data.to_dict(orient='records')
 
-        json_obj['table'] = self.table.to_json_obj()
+        if with_table:
+            json_obj['table'] = self.table.to_json_obj()
 
         return json_obj
 
     @property
     def json_obj(self):
-        return self.json_obj_base(with_value=True)
+        return self.json_obj_base(with_value=True, with_table=True)
+
+    def json_obj_func(self, with_value=True, with_table=True):
+        return self.json_obj_base(with_value=with_value, with_table=with_table)
 
     # @profile_line_by_line
     def nested_values(self, ref_group=None, ignore_ref_col=None, full_detail=False):
@@ -966,7 +970,7 @@ class DataTree(Tree):
         wb.save(pth)
 
 
-def get_right_angle_trees_from_tree_from_tree(tree: Tree, res=None, include_root=True):
+def get_right_angle_trees_from_tree(tree: Tree, res=None, include_root=True):
     if include_root:
         if res is None:
             res = [tree]
@@ -979,19 +983,19 @@ def get_right_angle_trees_from_tree_from_tree(tree: Tree, res=None, include_root
 
     if tree.parents:
         for parent in tree.parents:
-            get_right_angle_trees_from_tree_from_tree(parent, res)
+            get_right_angle_trees_from_tree(parent, res)
     if tree.children:
         for child in tree.children:
-            get_right_angle_trees_from_tree_from_tree(child, res, include_root=False)
+            get_right_angle_trees_from_tree(child, res, include_root=False)
     return res
 
 
-def get_flattened_tree_list_from_tree_list(tree_list: List[Tree], res=None):
+def get_flattened_tree_list_from_right_angle_trees(right_angle_trees: List[Tree], res=None):
     if res is None:
         res = []
-    for tree in tree_list:
+    for tree in right_angle_trees:
         res.append(tree)
-        get_flattened_tree_list_from_tree_list(tree.children, res)
+        get_flattened_tree_list_from_right_angle_trees(tree.children, res)
     return res
 
 

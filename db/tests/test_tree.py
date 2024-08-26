@@ -1,7 +1,7 @@
 from mint.settings import *
 from mint.db.tree import *
 from mint.sys_init import *
-from mint.api.base_obj import get_tables
+
 
 con = get_con('data')
 tables = get_tables('data')
@@ -27,8 +27,8 @@ def test_tree():
         index_col='name',
         index_values={'上海授信-20210628'}
     )
-    jo = datat.json_obj
-    print()
+    jo = datat.json_obj_func(with_table=False)
+    print(to_json_str(jo))
 
 
 if __name__ == '__main__':

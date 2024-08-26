@@ -101,6 +101,28 @@ def migrate_data_from_xl_folder(
     con.close()
 
 
+def get_cell_options(con, right_angle_trees, res=None):
+    if res is None:
+        res = {}
+    for t in right_angle_trees:
+        for col in t.table.cols:
+            if (
+                not pd.isna(col.foreign_key)
+                and col.foreign_key is not None
+                and col.foreign_key not in res
+            ):
+                ref_schema, ref_table, ref_col = col.foreign_key.split('.')
+                options = pd.read_sql(
+                    sql=f'select `{ref_col}` from `{ref_table}`',
+                    con=con
+                )[ref_col].tolist()
+                res[col.foreign_key] = options
+
+        res = get_cell_options(con, t.children, res)
+
+    return res
+
+
 def get_right_angle_trees(
         root,
         index_col=None,
@@ -118,40 +140,55 @@ def get_right_angle_trees(
         file_names = file_name_str.split(';')
         file_path = os.path.join(PATH_UPLOAD, file_names[0])
         dfs = pd.read_excel(file_path, sheet_name=None)
-        t = DataTree(tree=tree)
-        t.from_excel_booking_sheet(dfs=dfs)
+        dtree = DataTree(tree=tree)
+        dtree.from_excel_booking_sheet(dfs=dfs)
     else:
-        if stash_uuid is not None:
-            t = DataTree(tree=tree)
-            relevant_data_set_res = con.execute(
-                text(
-                    'select root, relevant_data_set from stash where stash_uuid = :stash_uuid'
-                ),
-                {'stash_uuid': stash_uuid}
+        dtree = DataTree(tree=tree)
+        if index_values is not None and len(index_values) > 0:
+            dtree.from_sql(
+                index_col=index_col,
+                index_values=set(index_values),
+                limit=None,
+                offset=offset
             )
-            if relevant_data_set_res.rowcount > 0:
-                relevant_data_set = to_json_obj(relevant_data_set_res.fetchone()[1])
-                relevant_data_set = {
-                    k: pd.DataFrame(v)
-                    for k, v in relevant_data_set.items()
-                    if len(v) > 0
-                }
-                t.from_relevant_data_set(relevant_data_set=relevant_data_set)
         else:
-            if int(limit) == 0:
-                t = tree
-            else:
-                t = DataTree(tree=tree)
-                t.from_sql(
-                    index_col=index_col,
-                    index_values=set(index_values),
-                    limit=limit,
-                    offset=offset
+            if stash_uuid is not None and stash_uuid != '':
+                relevant_data_set_res = con.execute(
+                    text(
+                        'select root, relevant_data_set from stash where stash_uuid = :stash_uuid'
+                    ),
+                    {'stash_uuid': stash_uuid}
                 )
+                if relevant_data_set_res.rowcount > 0:
+                    relevant_data_set = to_json_obj(relevant_data_set_res.fetchone()[1])
+                    relevant_data_set = {
+                        k: pd.DataFrame(v)
+                        for k, v in relevant_data_set.items()
+                        if len(v) > 0
+                    }
+                    dtree.from_relevant_data_set(relevant_data_set=relevant_data_set)
 
-    res = get_right_angle_trees_from_tree_from_tree(tree=t)
-    res = [t.json_obj for t in res]
+    right_angle_trees = get_right_angle_trees_from_tree(tree=dtree)
+    right_angle_trees_json = [t.json_obj for t in right_angle_trees]
+    values = {right_angle_trees_json[0]['root']: right_angle_trees_json[0]['values']}
+    values.update({
+        t['root']: t['values']
+        for t in right_angle_trees_json[0]['children']
+    })
+
+    cell_options = get_cell_options(
+        con=con,
+        right_angle_trees=right_angle_trees,
+    )
+
     con.close()
+
+    res = {
+        'tree': right_angle_trees_json,
+        'values': values,
+        'options': cell_options
+    }
+
     return res
 
 

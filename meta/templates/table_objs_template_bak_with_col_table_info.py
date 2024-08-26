@@ -66,6 +66,8 @@ class MetaColumn(JsonObj):
         # col attr end
 
         self.dir_table_name = dir_table_name
+        self.table_info = table_info
+        self.col_info = col_info
         self.get_schema = get_schema
 
         if self.default is not None:
@@ -205,6 +207,7 @@ class MetaTable(JsonObj):
                 self.schema = None
             else:
                 self.schema = get_schema(self.schema_tag)
+            self.cols_info = cols_info.replace(np.nan, None).to_dict(orient='records')
             self.pk = next((col.col_name for col in self.cols if col.is_primary == 1), None)
             if pd.isna(self.comment):
                 self.comment = ''
