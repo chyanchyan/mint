@@ -18,7 +18,8 @@ from mint.meta import models
 
 
 def get_schema(schema_tag):
-    return db_get_schema(schema_tag=schema_tag, sys_mode=SYS_MODE, project_name=PROJECT_NAME)
+    res = db_get_schema(schema_tag=schema_tag, sys_mode=SYS_MODE, project_name=PROJECT_NAME)
+    return res
 
 
 def get_con(schema_tag=None):

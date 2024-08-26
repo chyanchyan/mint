@@ -103,7 +103,7 @@ def db_connect_db(create_if_not_exist=True, **db_params):
 
 def db_get_schema_tags(con):
     return pd.read_sql(
-        sql='select `schema_tag` from schemas',
+        sql='select `schema_tag` from `schemas`',
         con=con
     )['schema_tag'].tolist()
 

@@ -1,3 +1,4 @@
+import pandas as pd
 from pandas import ExcelWriter
 from openpyxl import Workbook
 from copy import copy
@@ -512,8 +513,10 @@ class DataTree(Tree):
                 [pd.DataFrame(columns=[col.col_name for col in self.tables[node_name].cols])
                  for node_name in self.node_names]
             ))
-
-        root_data = relevant_data_set_copy[self.root]
+        try:
+            root_data = relevant_data_set_copy[self.root]
+        except KeyError:
+            root_data = pd.DataFrame(columns=[col.col_name for col in self.table.cols])
         if len(root_data) == 0:
             relevant_data_set_copy = dict(zip(
                 self.node_names,
