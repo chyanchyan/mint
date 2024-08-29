@@ -13,6 +13,8 @@ from mint.helper_function.hf_db import dfs_to_db
 from mint.sys_init import *
 from mint.db.tree import Tree, DataTree, get_flattened_tree_list_from_right_angle_trees
 from mint.db.utils import get_tables
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy import text
 
 
 def get_project_level_change_init_rows(df_p: pd.DataFrame, df_l: pd.DataFrame):
@@ -121,5 +123,46 @@ def booking_from_relevant_data_set_json(jo):
         print('-' * 50)
         print(df)
         print('*' * 100)
-        df.to_sql(root, con=con, if_exists='append', index=False)
+        try:
+            df.to_sql(root, con=con, if_exists='append', index=False)
+        except IntegrityError as e:
+            if e.orig.args[0] == 1452:
+                print('IntegrityError: ', e.args[0])
+                print('This is probably because of a foreign key constraint.')
+            elif e.orig.args[0] == 1062:
+                # update value base on duplicate entry
+                dup_key = e.orig.args[1].split("for key '")[1].split("'")[0]
+                if root == 'project':
+                    print('Duplicate entry in project. updating')
+                    for i, row in df.iterrows():
+                        name = row['name']
+                        sql = f'delete from project where name = "{name}"'
+                        con.execute(text(sql))
+                    df.to_sql(root, con=con, if_exists='append', index=False)
+                else:
+                    print('Duplicate entry in parents. updating')
+                    for i, row in df.iterrows():
 
+                        sql = (
+                            f'update {root} set '
+                            f'{dup_key} = {row[dup_key]} '
+                            f'where `{dup_key}` = {row[dup_key]}'
+                        )
+
+
+if __name__ == '__main__':
+    con = get_con('data')
+    df = pd.DataFrame({
+        'name': ['中诚信托安鑫2号（第7期）集合资金信托'],
+        'notional': 1000,
+        'annual_days': 365,
+        'st_date': dt(2024, 1, 1),
+        'type_ledger_detail': 'abs集合信托',
+        'type_predict': '非标-非放款池',
+        'project_credit_name': '未指定',
+        'type_scene': '其他',
+        'is_fed_project': 1,
+
+    })
+    df.to_sql('project', con=con, if_exists='append', index=False)
+    print(df)
