@@ -145,7 +145,6 @@ def get_right_angle_trees(
         values = {
             k: df
             for k, df in dtree.relevant_data_set.items()
-            if k == dtree.root or k in [c.root for c in dtree.children]
         }
     else:
         dtree = DataTree(tree=tree)
@@ -159,7 +158,6 @@ def get_right_angle_trees(
             values = {
                 k: df
                 for k, df in dtree.relevant_data_set.items()
-                if k == dtree.root or k in [c.root for c in dtree.children]
             }
         else:
             if stash_uuid is not None and stash_uuid != '':
