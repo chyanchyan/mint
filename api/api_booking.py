@@ -153,6 +153,7 @@ def booking_from_relevant_data_set_json(jo):
                 for record in data:
                     con.execute(text(sql), record)
             else:
+                traceback.print_exc()
                 raise e
 
 
