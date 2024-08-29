@@ -152,6 +152,8 @@ def booking_from_relevant_data_set_json(jo):
                 # 使用连接执行 SQL 语句
                 for record in data:
                     con.execute(text(sql), record)
+            else:
+                raise e
 
 
 if __name__ == '__main__':
