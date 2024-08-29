@@ -131,23 +131,27 @@ def booking_from_relevant_data_set_json(jo):
                 print('This is probably because of a foreign key constraint.')
             elif e.orig.args[0] == 1062:
                 # update value base on duplicate entry
-                dup_key = e.orig.args[1].split("for key '")[1].split("'")[0]
-                if root == 'project':
-                    print('Duplicate entry in project. updating')
-                    for i, row in df.iterrows():
-                        name = row['name']
-                        sql = f'delete from project where name = "{name}"'
-                        con.execute(text(sql))
-                    df.to_sql(root, con=con, if_exists='append', index=False)
-                else:
-                    print('Duplicate entry in parents. updating')
-                    for i, row in df.iterrows():
+                print('Duplicate entry in parents. updating')
+                cols = df.columns.tolist()
 
-                        sql = (
-                            f'update {root} set '
-                            f'{dup_key} = {row[dup_key]} '
-                            f'where `{dup_key}` = {row[dup_key]}'
-                        )
+                # 构造 INSERT 语句
+                insert_stmt = f"INSERT INTO {root} ({', '.join([f'`{col}`' for col in cols])}) VALUES "
+
+                # 构造 VALUES 占位符
+                values_stmt = f"({', '.join([':' + col for col in cols])})"
+
+                # 构造 ON DUPLICATE KEY UPDATE 部分
+                update_stmt = ', '.join([f"`{col}` = VALUES({col})" for col in cols if col != 'id'])
+
+                # 拼接完整 SQL 语句
+                sql = f"{insert_stmt}{values_stmt} ON DUPLICATE KEY UPDATE {update_stmt}"
+
+                # 将 DataFrame 转换为字典列表
+                data = df.replace(np.nan, None).to_dict(orient='records')
+
+                # 使用连接执行 SQL 语句
+                for record in data:
+                    con.execute(text(sql), record)
 
 
 if __name__ == '__main__':
