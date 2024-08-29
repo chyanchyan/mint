@@ -142,7 +142,11 @@ def get_right_angle_trees(
         dfs = pd.read_excel(file_path, sheet_name=None)
         dtree = DataTree(tree=tree)
         dtree.from_excel_booking_sheet(dfs=dfs)
-        values = dtree.relevant_data_set
+        values = {
+            k: df
+            for k, df in dtree.relevant_data_set.items()
+            if k == dtree.root or k in [c.root for c in dtree.children]
+        }
     else:
         dtree = DataTree(tree=tree)
         if index_values is not None and len(index_values) > 0:
@@ -152,7 +156,11 @@ def get_right_angle_trees(
                 limit=None,
                 offset=offset
             )
-            values = dtree.relevant_data_set
+            values = {
+                k: df
+                for k, df in dtree.relevant_data_set.items()
+                if k == dtree.root or k in [c.root for c in dtree.children]
+            }
         else:
             if stash_uuid is not None and stash_uuid != '':
                 relevant_data_set_res = con.execute(

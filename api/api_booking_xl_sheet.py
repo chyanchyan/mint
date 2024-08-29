@@ -148,12 +148,11 @@ def fill_table(
         if col.foreign_key and not pd.isna(col.foreign_key):
             db_name, parent_table_name, fk = col.foreign_key.split('.')
             if parent_table_name == root:   # 若为子表引用根表，则引用根表数据
-
                 formula1 = (
-                    f'=$E${[
-                               col.col_name 
-                               for col in filter(lambda x: x.web_visible == 1, tables[parent_table_name].cols)
-                           ].index(fk) + 4}'
+                    f'=bks_{tables[parent_table_name].label}!$E${[
+                        col.col_name 
+                        for col in filter(lambda x: x.web_visible == 1, tables[parent_table_name].cols)
+                    ].index(fk) + 4}'
                 )
             else:
                 parent_table_obj = tables[parent_table_name]
@@ -254,7 +253,8 @@ def fill_table(
                                 if foreign_table != root:
                                     apply_data_validation(sheet=ws_booking, cell=cell_value, col=col,
                                                           formula1=formula1)
-
+                                else:
+                                    ws_booking.cell(row=dst_row + 2 + r + 1, column=dst_col + col_idx + 3, value=formula1)
                             if col.web_obj == 'radio':
                                 apply_radio_validation(
                                     sheet=ws_booking, cell=cell_value
