@@ -206,7 +206,11 @@ def fill_table(
             cell_default = ws_booking.cell(row=dst_row + 2, column=dst_col + col_idx + 3)
 
             if col.table_name == 'auto_name':
-                auto_naming_cols = [(i, col) for i, col in enumerate(col_list) if not pd.isna(col.naming_field_order)]
+                auto_naming_cols = sorted([
+                    (i, col)
+                    for i, col in enumerate(col_list)
+                    if not (pd.isna(col.naming_field_order) or col.naming_field_order is None)
+                ], key=lambda x: x[1].naming_field_order)
                 auto_naming_col_addrs = [f'{get_column_letter(dst_col + item[0] + 3)}{dst_row + 2}' for item in auto_naming_cols]
                 default_value = '=' + '&"-"&'.join(auto_naming_col_addrs)
                 apply_cell_format(cell_default, cell_formats['auto_name'])
