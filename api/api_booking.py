@@ -155,21 +155,3 @@ def booking_from_relevant_data_set_json(jo):
             else:
                 traceback.print_exc()
                 raise e
-
-
-if __name__ == '__main__':
-    con = get_con('data')
-    df = pd.DataFrame({
-        'name': ['中诚信托安鑫2号（第7期）集合资金信托'],
-        'notional': 1000,
-        'annual_days': 365,
-        'st_date': dt(2024, 1, 1),
-        'type_ledger_detail': 'abs集合信托',
-        'type_predict': '非标-非放款池',
-        'project_credit_name': '未指定',
-        'type_scene': '其他',
-        'is_fed_project': 1,
-
-    })
-    df.to_sql('project', con=con, if_exists='append', index=False)
-    print(df)
