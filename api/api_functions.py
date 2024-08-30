@@ -131,6 +131,7 @@ def get_right_angle_trees(
         offset=None,
         file_name_str=None,
         stash_uuid=None,
+        fetch_parents=True,
         **kwargs
 ):
     con = get_con('data')
@@ -155,9 +156,11 @@ def get_right_angle_trees(
                 limit=None,
                 offset=offset
             )
+
             values = {
                 k: df
                 for k, df in dtree.relevant_data_set.items()
+                if fetch_parents or k in [root] + [child.root for child in dtree.children]
             }
         else:
             if stash_uuid is not None and stash_uuid != '':
@@ -172,6 +175,7 @@ def get_right_angle_trees(
                     values = {
                         k: pd.DataFrame(v)
                         for k, v in relevant_data_set.items()
+                        if fetch_parents or k in [root] + [child.root for child in dtree.children]
                     }
                 else:
                     values = {root: []}
