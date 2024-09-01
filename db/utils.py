@@ -177,76 +177,70 @@ def db_fill_change_null_value(
         last_to = 0
         for i, (row_index, g_row) in enumerate(g.iterrows()):
             row_id = g_row['id']
-            delta_value = g_row[delta_col]
-            to_value = g_row[to_col]
+            delta_value = copy(g_row[delta_col])
+            to_value = copy(g_row[to_col])
             # if to_value is None:
             #     to_value = np.nan
 
-            sql = None
+            u_to_value = copy(to_value)
+            u_delta_value = copy(delta_value)
             if i == 0:
                 if delta_value is None and to_value is None:
                     if len(df_filled) == 1:
                         # 若只有一行数据，则将缺失值设为0
-                        df_filled.loc[g_row.name, delta_col] = 0
-                        df_filled.loc[g_row.name, to_col] = 0
+                        u_delta_value = 0
+                        u_to_value = 0
                     else:
                         # 若第一天就缺失全部值，则 `to` 等于第二天的值
-                        df_filled.loc[g_row.name, delta_col] = 0
-                        df_filled.loc[g_row.name, to_col] = df_filled.iloc[1, :][to_col]
+                        u_delta_value = 0
+                        u_to_value = copy(df_filled.iloc[1, :][to_col])
 
                 # 若第一天就缺失某一个值，则等于另一个值
                 elif delta_value is None:
-                    delta_value = round(to_value, digits)
-                    sql = (
-                        f'update `{table_name}` set `{delta_col}` = {delta_value} '
-                        f'where `id` = {row_id};'
-                    )
-                    df_filled.loc[g_row.name, delta_col] = delta_value
+                    u_delta_value = round(to_value, digits)
                 elif to_value is None:
-                    to_value = round(delta_value, digits)
-                    sql = (
-                        f'update `{table_name}` set `{to_col}` = {delta_value} '
-                        f'where `id` = {row_id};'
-                    )
-                    df_filled.loc[g_row.name, to_col] = to_value
+                    u_to_value = round(delta_value, digits)
+                else:
+                    u_delta_value = copy(delta_value)
             else:
                 # 若期间缺失某一个值
                 if delta_value is None and to_value is not None:
-                    delta_value = round(to_value - last_to, digits)
-                    sql = (
-                        f'update `{table_name}` set `{delta_col}` = {delta_value} '
-                        f'where `id` = {row_id};'
-                    )
-                    df_filled.loc[g_row.name, delta_col] = delta_value
+                    if validate_by_to:
+                        u_delta_value = round(to_value - last_to, digits)
+                    else:
+                        u_delta_value = 0
+                        u_to_value = copy(last_to)
                 elif delta_value is not None and to_value is None:
-                    to_value = round(last_to + delta_value, digits)
-                    sql = (
-                        f'update `{table_name}` set `{to_col}` = {to_value} '
-                        f'where `id` = {row_id};'
-                    )
-                    df_filled.loc[g_row.name, to_col] = to_value
+                    if validate_by_to:
+                        u_delta_value = round(-last_to, digits)
+                        u_to_value = 0
+                    else:
+                        u_to_value = round(last_to + delta_value, digits)
                 elif delta_value is None and to_value is None:
-                    to_value = round(last_to, digits)
-                    sql = (
-                        f'update `{table_name}` set `{delta_col}` = 0, '
-                        f'`{to_col}` = {to_value} '
-                        f'where `id` = {row_id};'
-                    )
-                    df_filled.loc[g_row.name, delta_col] = 0
-                    df_filled.loc[g_row.name, to_col] = to_value
+                    # 如果都缺失，则默认按照to
+                    u_delta_value = 0
+                    u_to_value = round(last_to, digits)
+
                 elif delta_value is not None and to_value is not None:
                     # 如果都有值，则校验
                     if round(delta_value, 4) != round(to_value - last_to, digits):
                         if validate_by_to:
-                            delta_value = round(to_value - last_to, digits)
+                            u_delta_value = round(to_value - last_to, digits)
                         else:
-                            to_value = round(last_to + delta_value, digits)
-                        df_filled.loc[g_row.name, delta_col] = delta_value
-                        df_filled.loc[g_row.name, to_col] = to_value
+                            u_to_value = round(last_to + delta_value, digits)
 
-            if sql:
+            if u_to_value != to_value or u_delta_value != delta_value:
+                sql = (
+                    f'update `{table_name}` set `{delta_col}` = {u_delta_value}, '
+                    f'`{to_col}` = {u_to_value} '
+                    f'where `id` = {row_id};'
+                )
+                df_filled.loc[g_row.name, delta_col] = u_delta_value
+                df_filled.loc[g_row.name, to_col] = u_to_value
+
                 fill_sqls.append(sql)
-            last_to = copy(to_value)
+
+            last_to = copy(u_to_value)
 
     return df_filled, fill_sqls
 

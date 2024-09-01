@@ -95,6 +95,7 @@ def booking_from_relevant_data_set_json(jo):
     tables = get_tables('data')
     root = jo['root']
     relevant_data_set_json = jo['relevantDataSet']
+    is_updating = jo['isUpdating']
     relevant_data_set = {
         table_root: pd.DataFrame(
             data=values,
@@ -116,6 +117,44 @@ def booking_from_relevant_data_set_json(jo):
 
     dtree = DataTree(root=root, con=con, tables=tables)
     dtree.from_relevant_data_set(relevant_data_set)
+    values = dtree.relevant_data_set
+
+    if is_updating:
+        for child in dtree.children:
+            if len(child.children) == 0:
+                reffed_value = values[root][child.reffed].tolist()[0]
+                sql = f'delete from {child.root} where `{child.ref}` = :reffed_value'
+                params = {
+                    'reffed_value': reffed_value
+                }
+                print(sql)
+                print(params)
+                print(f'clear child data {child.root} where {child.ref} = {reffed_value}')
+                print()
+                con.execute(text(sql), params)
+            # else:
+            #     df = values[child.root]
+            #     data = df.replace(np.nan, None).to_dict(orient='records')
+            #
+            #     cols = df.columns.tolist()
+            #
+            #     # 构造 INSERT 语句
+            #     insert_stmt = f"INSERT INTO {root} ({', '.join([f'`{col}`' for col in cols])}) VALUES "
+            #
+            #     # 构造 VALUES 占位符
+            #     values_stmt = f"({', '.join([':' + col for col in cols])})"
+            #
+            #     # 构造 ON DUPLICATE KEY UPDATE 部分
+            #     update_stmt = ', '.join([f"`{col}` = VALUES({col})" for col in cols if col != 'id'])
+            #
+            #     # 拼接完整 SQL 语句
+            #     sql = f"{insert_stmt}{values_stmt} ON DUPLICATE KEY UPDATE {update_stmt}"
+            #     print(sql)
+            #     print(f'update child data {child.root}')
+            #
+            #     for record in data:
+            #         con.execute(text(sql), record)
+
     for root in dtree.booking_sequence:
         df = dtree.relevant_data_set[root]
         print('-' * 50)
@@ -123,35 +162,54 @@ def booking_from_relevant_data_set_json(jo):
         print('-' * 50)
         print(df)
         print('*' * 100)
+
         try:
             df.to_sql(root, con=con, if_exists='append', index=False)
         except IntegrityError as e:
             if e.orig.args[0] == 1452:
                 print('IntegrityError: ', e.args[0])
                 print('This is probably because of a foreign key constraint.')
+                traceback.print_exc()
+                raise e
             elif e.orig.args[0] == 1062:
-                # update value base on duplicate entry
-                print('Duplicate entry in parents. updating')
-                cols = df.columns.tolist()
+                if is_updating:
+                    # update value base on duplicate entry
+                    print('Duplicate entry in parents. updating')
+                    cols = df.columns.tolist()
 
-                # 构造 INSERT 语句
-                insert_stmt = f"INSERT INTO {root} ({', '.join([f'`{col}`' for col in cols])}) VALUES "
+                    # 构造 INSERT 语句
+                    insert_stmt = f"INSERT INTO {root} ({', '.join([f'`{col}`' for col in cols])}) VALUES "
 
-                # 构造 VALUES 占位符
-                values_stmt = f"({', '.join([':' + col for col in cols])})"
+                    # 构造 VALUES 占位符
+                    values_stmt = f"({', '.join([':' + col for col in cols])})"
 
-                # 构造 ON DUPLICATE KEY UPDATE 部分
-                update_stmt = ', '.join([f"`{col}` = VALUES({col})" for col in cols if col != 'id'])
+                    # 构造 ON DUPLICATE KEY UPDATE 部分
+                    update_stmt = ', '.join([f"`{col}` = VALUES({col})" for col in cols if col != 'id'])
 
-                # 拼接完整 SQL 语句
-                sql = f"{insert_stmt}{values_stmt} ON DUPLICATE KEY UPDATE {update_stmt}"
+                    # 拼接完整 SQL 语句
+                    sql = f"{insert_stmt}{values_stmt} ON DUPLICATE KEY UPDATE {update_stmt}"
 
-                # 将 DataFrame 转换为字典列表
-                data = df.replace(np.nan, None).to_dict(orient='records')
+                    # 将 DataFrame 转换为字典列表
+                    data = df.replace(np.nan, None).to_dict(orient='records')
 
-                # 使用连接执行 SQL 语句
-                for record in data:
-                    con.execute(text(sql), record)
+                    # 使用连接执行 SQL 语句
+                    for record in data:
+                        con.execute(text(sql), record)
+                else:
+                    traceback.print_exc()
+                    raise e
             else:
                 traceback.print_exc()
                 raise e
+
+def delete(
+        root,
+        index_col=None,
+        index_value=None,
+        **kwargs
+):
+    if index_value is None:
+        return
+    con = get_con('data')
+    sql = f'delete from {root} where `{index_col}` = {index_value}'
+    con.execute(text(sql))

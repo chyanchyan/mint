@@ -543,14 +543,19 @@ class DataTree(Tree):
                 data = pd.DataFrame(columns=[col.col_name for col in self.table.cols])
                 for col, tree_values in values_map[node_name].items():
                     values = tree_values['values']
-                    values_str = ', '.join(['"%s"' % value for value in values])
+                    values_str = ', '.join([f'"{value}"' for value in values])
                     data = relevant_data_set_copy[node_name]
                     where_str = f'(data["{col}"].isin([{values_str}]))'
                     where_str_list.append(where_str)
 
                 all_where_str = ' | '.join(where_str_list)
 
-                relevant_data_set_copy[node_name] = eval(f'data[{all_where_str}]')
+                try:
+                    relevant_data_set_copy[node_name] = eval(f'data[{all_where_str}]')
+                except SyntaxError:
+                    print(where_str_list)
+                    print(all_where_str)
+                    raise SyntaxError
 
                 for col, tree_values in values_map[node_name].items():
                     values_map = self.update_values_map(

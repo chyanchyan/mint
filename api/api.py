@@ -15,7 +15,7 @@ if parent_dir not in sys.path:
 from mint.helper_function.wrappers import api_status_wrapper
 from mint.helper_function.hf_data import *
 from mint.api.api_functions import *
-from mint.api.api_booking import booking_from_relevant_data_set_json
+from mint.api.api_booking import *
 
 app = Flask(__name__)
 CORS(app=app)
@@ -131,6 +131,15 @@ def api_gen_booking_xl_sheet():
         root=in_json_obj['root'],
         row_id=in_json_obj['id']
     )
+    return res
+
+
+@app.route('/api/delete', methods=['GET', 'POST'])
+@api_status_wrapper
+def api_delete():
+    jo = get_in_json_obj(req=request)
+
+    res = delete(**jo)
     return res
 
 
