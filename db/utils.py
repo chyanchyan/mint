@@ -198,10 +198,10 @@ def db_fill_change_null_value(
                 # 若第一天就缺失某一个值，则等于另一个值
                 elif delta_value is None:
                     u_delta_value = round(to_value, digits)
+                    u_to_value = round(to_value, digits)
                 elif to_value is None:
+                    u_delta_value = round(delta_value, digits)
                     u_to_value = round(delta_value, digits)
-                else:
-                    u_delta_value = copy(delta_value)
             else:
                 # 若期间缺失某一个值
                 if delta_value is None and to_value is not None:
@@ -216,18 +216,24 @@ def db_fill_change_null_value(
                         u_to_value = 0
                     else:
                         u_to_value = round(last_to + delta_value, digits)
+
+                # 如果都缺失，则默认按照to
                 elif delta_value is None and to_value is None:
-                    # 如果都缺失，则默认按照to
                     u_delta_value = 0
                     u_to_value = round(last_to, digits)
 
+                # 如果都有值，则校验
                 elif delta_value is not None and to_value is not None:
-                    # 如果都有值，则校验
                     if round(delta_value, 4) != round(to_value - last_to, digits):
                         if validate_by_to:
                             u_delta_value = round(to_value - last_to, digits)
+                            u_to_value = round(to_value, digits)
                         else:
+                            u_delta_value = round(delta_value, digits)
                             u_to_value = round(last_to + delta_value, digits)
+                    else:
+                        u_delta_value = round(delta_value, digits)
+                        u_to_value = round(to_value, digits)
 
             if u_to_value != to_value or u_delta_value != delta_value:
                 sql = (
@@ -307,7 +313,7 @@ def db_get_df_changes(
         JOIN (
             SELECT `{index}`, MAX(`{date_col}`) AS max_date
             FROM `{table_name}`
-            WHERE `{date_col}` < "{st_date.strftime('%F')}"
+            WHERE `{date_col}` < "{st_date.strftime('%F %T')}"
             GROUP BY `{index}`    
         ) t2
         ON t1.`{index}` = t2.`{index}` AND t1.`{date_col}` = t2.max_date
@@ -317,8 +323,8 @@ def db_get_df_changes(
     sql_rest = f"""
         SELECT *
         FROM `{table_name}`
-        WHERE (`{date_col}` >= "{st_date.strftime('%F')}" 
-        AND `{date_col}` < "{exp_date.strftime('%F')}") 
+        WHERE (`{date_col}` >= "{st_date.strftime('%F %T')}" 
+        AND `{date_col}` < "{exp_date.strftime('%F %T')}") 
         %s 
     """
 

@@ -124,6 +124,7 @@ def get_cell_options(con, right_angle_trees, res=None):
 
 
 def get_right_angle_trees(
+        con,
         root,
         index_col=None,
         index_values=None,
@@ -134,7 +135,6 @@ def get_right_angle_trees(
         fetch_parents=True,
         **kwargs
 ):
-    con = get_con('data')
     tables = get_tables('data')
     tree = Tree(con=con, tables=tables, root=root)
     if file_name_str is not None and file_name_str != '':
@@ -144,7 +144,7 @@ def get_right_angle_trees(
         dtree = DataTree(tree=tree)
         dtree.from_excel_booking_sheet(dfs=dfs)
         values = {
-            k: df
+            k: df.reset_index()
             for k, df in dtree.relevant_data_set.items()
         }
     else:
@@ -158,7 +158,7 @@ def get_right_angle_trees(
             )
 
             values = {
-                k: df
+                k: df.reset_index()
                 for k, df in dtree.relevant_data_set.items()
                 if fetch_parents or k in [root] + [child.root for child in dtree.children]
             }
@@ -173,7 +173,7 @@ def get_right_angle_trees(
                 if relevant_data_set_res.rowcount > 0:
                     relevant_data_set = to_json_obj(relevant_data_set_res.fetchone()[1])
                     values = {
-                        k: pd.DataFrame(v)
+                        k: pd.DataFrame(v).reset_index()
                         for k, v in relevant_data_set.items()
                         if fetch_parents or k in [root] + [child.root for child in dtree.children]
                     }
@@ -396,11 +396,9 @@ def tree_dict_to_json(tree_dict):
     return res
 
 
-def gen_booking_xl_sheet_file(root, row_id=''):
-    con = get_con('data')
-    tables = get_tables('data')
+def gen_booking_xl_sheet_file(con, root, row_id='', **kwargs):
     timestamp = dt.now().strftime("%Y%m%d_%H%M%S_%f")
-    dtree = DataTree(root=root, con=con, tables=tables)
+    dtree = DataTree(root=root, con=con, tables=TABLES)
     if row_id != "":
         dtree.from_sql(index_col='id', index_values={row_id})
         p_name = dtree.relevant_data_set[root]["name"].values[0]
@@ -421,7 +419,6 @@ def gen_booking_xl_sheet_file(root, row_id=''):
         data_tree=dtree,
         template_path=template_path
     )
-    con.close()
     return {
         'filePath': output_path,
         'fileName': output_filename,
@@ -448,20 +445,16 @@ def migrate_from_xlsx(folder, schema_tags=None):
     con.close()
 
 
-def stash(jo):
-    root = jo['root']
-    stash_uuid = jo['stashUuid']
-    relevant_data_set = jo['relevantDataSet']
+def stash(con, root, stash_uuid, relevant_data_set, comment, **kwargs):
+
     relevant_data_set = to_json_str(relevant_data_set)
-    comment = jo['comment']
 
-    con = get_con('data')
-
-    is_exist = check_unique({
-        'table_name': 'stash',
-        'col_name': 'stash_uuid',
-        'value': stash_uuid
-    })
+    is_exist = check_unique(
+        con=con,
+        table_name='stash',
+        col_name='stash_uuid',
+        value=stash_uuid
+    )
 
     if not is_exist:
         sql = ('INSERT INTO stash (stash_uuid, root, relevant_data_set, comment) '
@@ -489,13 +482,13 @@ def stash(jo):
                 'comment': comment,
             }
         )
-    con.close()
+
     return {'stashUuid': stash_uuid}
 
 
-def get_stash_list():
-    con = get_con('data')
-    table = get_tables('data')['stash']
+def get_stash_list(con, **kwargs):
+
+    table = TABLES['stash']
 
     col_names = [
         'id',
@@ -508,29 +501,21 @@ def get_stash_list():
 
     sql = 'SELECT * FROM stash'
     df = pd.read_sql(sql, con=con).sort_values('id', ascending=False)[col_names]
-    con.close()
 
     res = df_to_ant_table_options(df=df, titles=titles, data_types=data_types)
     return res
 
 
-def get_select_options(jo):
-    table_name = jo['table_name']
-    col_name = jo['col_name']
+def get_select_options(con, table_name, col_name, **kwargs):
     sql = 'SELECT DISTINCT {} FROM {}'.format(col_name, table_name)
-    con = get_con('data')
     df = pd.read_sql(sql, con=con)
-    con.close()
+
     res = df[col_name].tolist()
     return res
 
 
-def check_unique(jo):
-    table_name = jo['table_name']
-    col_name = jo['col_name']
-    value = jo['value']
+def check_unique(con, table_name, col_name, value, **kwargs):
     sql = 'SELECT * FROM {} WHERE {} = :value'.format(table_name, col_name)
-    con = get_con('data')
     result = con.execute(text(sql), {'value': value})
-    con.close()
+
     return result.rowcount > 0

@@ -184,7 +184,7 @@ class Tree(JsonObj):
     def all_childhood_names(self):
         res = set([c.root for c in self.children])
         for c in self.children:
-            res |= c.all_parenthood_names()
+            res |= c.all_childhood_names()
         return res
 
     def get_child_path(self, child_root: str):
@@ -501,6 +501,29 @@ class DataTree(Tree):
                         root_data=data
                     )
 
+            for node_name, value_map in values_map.items():
+                if node_name not in relevant_data_set:
+                    where_str_list = []
+                    for col, tree_values in values_map[node_name].items():
+                        values = tree_values['values']
+
+                        # has no value by col
+                        if len(values) == 0:
+                            continue
+
+                        values_str = ', '.join(['"%s"' % value.replace('%', '%%') for value in values])
+                        where_str = f'(`{col}` in ({values_str}))'
+                        where_str_list.append(where_str)
+
+                    # has no value in table
+                    if len(where_str_list) == 0:
+                        continue
+                    all_where_str = ' or '.join(where_str_list)
+
+                    sql = f'SELECT * FROM {self.tables[node_name].schema}.{node_name} WHERE {all_where_str}'
+                    data = pd.read_sql(sql=sql, con=self.con, index_col='id')
+                    relevant_data_set[node_name] = data
+
         self.data = relevant_data_set[self.root]
         self.relevant_data_set = relevant_data_set
 
@@ -513,10 +536,12 @@ class DataTree(Tree):
                 [pd.DataFrame(columns=[col.col_name for col in self.tables[node_name].cols])
                  for node_name in self.node_names]
             ))
+
         try:
             root_data = relevant_data_set_copy[self.root]
         except KeyError:
             root_data = pd.DataFrame(columns=[col.col_name for col in self.table.cols])
+
         if len(root_data) == 0:
             relevant_data_set_copy = dict(zip(
                 self.node_names,

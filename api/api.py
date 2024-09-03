@@ -15,7 +15,7 @@ if parent_dir not in sys.path:
 from mint.helper_function.wrappers import api_status_wrapper
 from mint.helper_function.hf_data import *
 from mint.api.api_functions import *
-from mint.api.api_booking import *
+from mint.api.api_curd import *
 
 app = Flask(__name__)
 CORS(app=app)
@@ -81,7 +81,9 @@ def api_hello():
 @api_status_wrapper
 def api_get_get_right_angle_trees():
     jo = get_in_json_obj(req=request)
-    res = get_right_angle_trees(**jo)
+    con = get_con('data')
+    res = get_right_angle_trees(con=con, **jo)
+    con.close()
     return res
 
 
@@ -89,7 +91,9 @@ def api_get_get_right_angle_trees():
 @api_status_wrapper
 def api_get_select_options():
     jo = get_in_json_obj(req=request)
-    res = get_select_options(jo)
+    con = get_con('data')
+    res = get_select_options(con, **jo)
+    con.close()
     return res
 
 
@@ -97,7 +101,9 @@ def api_get_select_options():
 @api_status_wrapper
 def api_check_unique():
     jo = get_in_json_obj(req=request)
-    res = check_unique(jo)
+    con = get_con('data')
+    res = check_unique(con, **jo)
+    con.close()
     return res
 
 
@@ -105,43 +111,62 @@ def api_check_unique():
 @api_status_wrapper
 def api_stash():
     jo = get_in_json_obj(req=request)
-    return stash(jo)
+    con = get_con('data')
+    res = stash(con, **jo)
+    con.close()
+    return res
 
 
 @app.route('/api/getStashList', methods=['GET', 'POST'])
 @api_status_wrapper
 def api_get_stash_list():
-    return get_stash_list()
-
-
-@app.route('/api/booking', methods=['GET', 'POST'])
-@api_status_wrapper
-def api_booking():
-    jo = get_in_json_obj(req=request)
-    booking_from_relevant_data_set_json(jo)
-    return
+    con = get_con('data')
+    res = get_stash_list(con=con)
+    con.close()
+    return res
 
 
 @app.route('/api/genBookingXlSheet', methods=['GET', 'POST'])
 @api_status_wrapper
 def api_gen_booking_xl_sheet():
-    in_json_obj = get_in_json_obj(req=request)
-
-    res = gen_booking_xl_sheet_file(
-        root=in_json_obj['root'],
-        row_id=in_json_obj['id']
-    )
-    return res
-
-
-@app.route('/api/delete', methods=['GET', 'POST'])
-@api_status_wrapper
-def api_delete():
     jo = get_in_json_obj(req=request)
-
-    res = delete(**jo)
+    con = get_con('data')
+    res = gen_booking_xl_sheet_file(
+        con=con,
+        **jo
+    )
+    con.close()
     return res
 
+
+@app.route('/api/createTree', methods=['GET', 'POST'])
+@api_status_wrapper
+def api_create_tree():
+    jo = get_in_json_obj(req=request)
+    con = get_con('data')
+    create_tree(con, **jo)
+    con.close()
+    return
+
+
+@app.route('/api/deleteTree', methods=['GET', 'POST'])
+@api_status_wrapper
+def api_delete_tree():
+    jo = get_in_json_obj(req=request)
+    con = get_con('data')
+    res = delete_tree(con=con, **jo)
+    con.close()
+    return res
+
+
+@app.route('/api/updateTree', methods=['GET', 'POST'])
+@api_status_wrapper
+def api_update_tree():
+    jo = get_in_json_obj(req=request)
+    con = get_con('data')
+    res = update_tree(con=con, **jo)
+    con.close()
+    return res
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8083, debug=True)
