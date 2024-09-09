@@ -164,16 +164,22 @@ def db_fill_change_null_value(
         date_col,
         delta_col,
         to_col,
-        validate_by_to: bool = True
+        validate_by_to: bool = True,
+        is_sorted = False
 ):
     digits = 8
-    df_filled = df_to_fill.sort_values([index, date_col]).replace(np.nan, None).replace(pd.NaT, None)
-    df_to_fill_copy = df_to_fill.copy().sort_values([index, date_col]).replace(np.nan, None).replace(pd.NaT, None)
+    if not is_sorted:
+        df_to_fill_copy = df_to_fill.sort_values([index, date_col])
+    else:
+        df_to_fill_copy = df_to_fill.copy()
+    df_to_fill_copy = df_to_fill_copy.replace(np.nan, None).replace(pd.NaT, None)
+    df_filled = df_to_fill_copy.copy()
+
     if len(df_to_fill_copy) == 0:
         print('all data filled')
         return df_filled, []
     fill_sqls = []
-    for index_value, g in df_to_fill_copy.sort_values([index, date_col]).groupby(index):
+    for index_value, g in df_to_fill_copy.groupby(index):
         last_to = 0
         for i, (row_index, g_row) in enumerate(g.iterrows()):
             row_id = g_row['id']
@@ -202,11 +208,19 @@ def db_fill_change_null_value(
                 elif to_value is None:
                     u_delta_value = round(delta_value, digits)
                     u_to_value = round(delta_value, digits)
+                else:
+                    if validate_by_to:
+                        u_delta_value = round(to_value, digits)
+                        u_to_value = round(to_value, digits)
+                    else:
+                        u_delta_value = round(delta_value, digits)
+                        u_to_value = round(delta_value, digits)
             else:
                 # 若期间缺失某一个值
                 if delta_value is None and to_value is not None:
                     if validate_by_to:
                         u_delta_value = round(to_value - last_to, digits)
+                        u_to_value = round(to_value, digits)
                     else:
                         u_delta_value = 0
                         u_to_value = copy(last_to)
@@ -236,18 +250,27 @@ def db_fill_change_null_value(
                         u_to_value = round(to_value, digits)
 
             if u_to_value != to_value or u_delta_value != delta_value:
-                sql = (
-                    f'update `{table_name}` set `{delta_col}` = {u_delta_value}, '
-                    f'`{to_col}` = {u_to_value} '
-                    f'where `id` = {row_id};'
-                )
-                df_filled.loc[g_row.name, delta_col] = u_delta_value
-                df_filled.loc[g_row.name, to_col] = u_to_value
+                if row_id is not None:
+                    sql = (
+                        f'update `{table_name}` set `{delta_col}` = {u_delta_value}, '
+                        f'`{to_col}` = {u_to_value} '
+                        f'where `id` = {row_id};'
+                    )
+                else:
+                    sql = (
+                        f'update `{table_name}` set `{delta_col}` = {u_delta_value}, '
+                        f'`{to_col}` = {u_to_value} '
+                        f'where `{index}` = \'{index_value}\' and `{date_col}` = \'{g_row[date_col]}\';'
+                    )
+                df_filled.loc[g_row.name, delta_col] = copy(u_delta_value)
+                df_filled.loc[g_row.name, to_col] = copy(u_to_value)
 
                 fill_sqls.append(sql)
 
             last_to = copy(u_to_value)
-
+            print('*' * 100)
+            print(df_filled)
+            print('*' * 100)
     return df_filled, fill_sqls
 
 

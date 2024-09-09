@@ -10,6 +10,7 @@ if parent_dir not in sys.path:
     sys.path.append(parent_dir)
 
 from mint.helper_function.hf_db import dfs_to_db
+from mint.helper_function.hf_data import is_equal
 from mint.sys_init import *
 from mint.db.tree import Tree, DataTree, get_flattened_tree_list_from_right_angle_trees
 from mint.db.utils import get_tables
@@ -207,51 +208,178 @@ def delete_tree(
 
 
 def update_tree(
+        con,
         root,
-        relevant_data_set: Dict[str, pd.DataFrame],
-        algo_func=None,
         index_col=None,
-        index_value=None,
+        index_values=None,
+        submit_values: Dict[str, pd.DataFrame] = None,
+        preview=True,
         **kwargs
 ):
-    if algo_func is not None:
-        relevant_data_set = algo_func(relevant_data_set, **kwargs)
 
-    con = get_con('data')
+    dtree = DataTree(con=con, root=root, tables=TABLES)
+    dtree.from_sql(index_col=index_col, index_values=index_values)
+    prev_values_set = {}
+    for table_root, df in dtree.relevant_data_set.items():
+        prev_values_set[table_root] = df.replace(np.nan, None)
 
-    dtree = DataTree(root=root, con=con, tables=TABLES)
-    dtree.from_relevant_data_set(relevant_data_set)
-    trimmed_relevant_data_set = dtree.relevant_data_set
-    all_childhood_names = dtree.all_childhood_names()
-    for table_root in dtree.booking_sequence:
-        df = trimmed_relevant_data_set[table_root]
-        cols = df.columns.tolist()
-        
-        if table_root == root:
-            delete_tree(con, root, index_col=index_col, index_value=index_value)
-            create(con, root, df)
+    return update_tree_exec(
+        con=con,
+        dtree=dtree,
+        prev_values_set=prev_values_set,
+        submit_values=submit_values,
+        preview=preview,
+        **kwargs
+    )
 
-        elif table_root is dtree.all_parenthood_names():
-            # 构造 INSERT 语句
-            insert_stmt = f"INSERT INTO {table_root} ({', '.join([f'`{col}`' for col in cols])}) VALUES "
 
-            # 构造 VALUES 占位符
-            values_stmt = f"({', '.join([':' + col for col in cols])})"
+def update_tree_exec(
+        con,
+        dtree,
+        prev_values_set,
+        submit_values: Dict[str, pd.DataFrame] = None,
+        preview=True,
+        **kwargs
+):
 
-            # 构造 ON DUPLICATE KEY UPDATE 部分
-            update_stmt = ', '.join([f"`{col}` = VALUES({col})" for col in cols if col != 'id'])
+    table_changes = {}
+    for table_root, df in submit_values.items():
+        visible_cols = [col for col in TABLES[table_root].cols if col.web_visible == 1]
+        prev_values = prev_values_set[table_root].reset_index().to_dict(orient='records')
+        cur_values = submit_values[table_root]
+        row_changes = []
+        if len(prev_values) >= len(cur_values):
+            for i, cur_row in enumerate(cur_values):
+                value_changes = {}
+                prev_row = prev_values[i]
+                for col in visible_cols:
+                    col_name = col.col_name
+                    pv = prev_row[col_name]
+                    try:
+                        cv = cur_row[col_name]
+                    except KeyError:
+                        cv = None
+                    value_changes[col_name] = (pv, cv)
+                row_changes.append(value_changes)
 
-            # 拼接完整 SQL 语句
-            sql = f"{insert_stmt}{values_stmt} ON DUPLICATE KEY UPDATE {update_stmt}"
+            for i, prev_row in enumerate(prev_values[len(cur_values):]):
+                value_changes = {}
+                for col in visible_cols:
+                    col_name = col.col_name
+                    pv = prev_row[col_name]
+                    cv = '[delete]'
+                    value_changes[col_name] = (pv, cv)
+                row_changes.append(value_changes)
+        else:
+            for i, prev_row in enumerate(prev_values):
+                value_changes = {}
+                cur_row = cur_values[i]
+                for col in visible_cols:
+                    col_name = col.col_name
+                    pv = prev_row[col_name]
+                    try:
+                        cv = cur_row[col_name]
+                    except KeyError:
+                        cv = None
+                    value_changes[col_name] = (pv, cv)
+                row_changes.append(value_changes)
 
-            # 将 DataFrame 转换为字典列表
-            data = df.replace(np.nan, None).to_dict(orient='records')
+            for i, cur_row in enumerate(cur_values[len(prev_values):]):
+                value_changes = {}
+                for col in visible_cols:
+                    col_name = col.col_name
+                    pv = '[add]'
+                    try:
+                        cv = cur_row[col_name]
+                    except KeyError:
+                        cv = None
+                    value_changes[col_name] = (pv, cv)
+                row_changes.append(value_changes)
 
-            # 使用连接执行 SQL 语句
-            for record in data:
-                con.execute(text(sql), record)
-                
-        elif table_root in all_childhood_names:
-            create(con, root, df)
+        table_changes[table_root] = row_changes
+
+    if preview:
+        preview_tables = []
+        for table_root, row_changes in table_changes.items():
+            visible_cols = [col for col in TABLES[table_root].cols if col.web_visible == 1]
+            if table_root in table_changes:
+                row_changes = table_changes[table_root]
+                for row_change in row_changes:
+                    if any([
+                        not is_equal(item[1][0], item[1][1])
+                        for item in row_change.items()
+                        if item[0] != 'id'
+                    ]):
+                        break
+                else:
+                    continue
+
+            change_data = []
+            for row_change in row_changes:
+                value_changes = {
+                    col.col_name: f'{row_change[col.col_name][0]} -> {row_change[col.col_name][1]}'
+                    if not is_equal(row_change[col.col_name][0], row_change[col.col_name][1])
+                    else row_change[col.col_name][1]
+                    for col in visible_cols
+                    if col.col_name != 'id'
+                }
+                change_data.append(value_changes)
+
+            df = pd.DataFrame(data=change_data).replace(np.nan, None)
+            df = df.rename(columns={col.col_name: col.label for col in visible_cols})
+            preview_tables.append({
+                'label': TABLES[table_root].label,
+                'data': df.to_dict(orient='split')
+            })
+        return preview_tables
+    else:
+        sqls = []
+        for table_root in dtree.booking_sequence:
+            if table_root in table_changes:
+                row_changes = table_changes[table_root]
+                for row_change in row_changes:
+                    if any([
+                        not is_equal(item[1][0], item[1][1])
+                        for item in row_change.items()
+                        if item[0] != 'id'
+                    ]):
+                        break
+                else:
+                    continue
+
+                if table_root in dtree.all_childhood_names():
+                    prev_ids = [
+                        str(row['id']) for row in
+                        prev_values_set[table_root].reset_index().to_dict(orient='records')
+                    ]
+                    prev_ids = ', '.join(prev_ids)
+                    sql = f"delete from {table_root} where id in ({prev_ids})"
+                    sqls.append((text(sql), {}))
+
+                    for row_change in row_changes:
+                        row = {col: row_change[col][1] for col in row_change.keys()}
+                        sql = f"insert into {table_root} ({', '.join(row.keys())}) values ({', '.join([f':{v}' for v in row.keys()])})"
+                        sqls.append((text(sql), row))
+                else:
+                    for row_change in row_changes:
+                        if row_change['id'][1] == '[delete]':
+                            row_id = row_change['id'][0]
+                            sql = f"delete from {table_root} where id = {row_id}"
+                            sqls.append((text(sql), {}))
+                        elif row_change['id'][0] == '[add]':
+                            row = {col: row_change[col][1] for col in row_change.keys()}
+                            sql = f"insert into {table_root} ({', '.join(row.keys())}) values ({', '.join([f':{v}' for v in row.keys()])})"
+                            sqls.append((text(sql), row))
+                        else:
+                            row_id = row_change['id'][0]
+                            row = {col: row_change[col][1] for col in row_change.keys()}
+                            if len(row) > 0:
+                                sql = f"update {table_root} set {', '.join([f'{col} = :{col}' for col in row.keys()])} where id = {row_id}"
+                                sqls.append((text(sql), row))
+
+        for item in sqls:
+            print(item[0].text)
+            con.execute(*item)
+        con.commit()
 
 
