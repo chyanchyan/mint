@@ -13,7 +13,6 @@ if parent_dir not in sys.path:
     sys.path.append(parent_dir)
 
 from mint.helper_function.wrappers import api_status_wrapper
-from mint.helper_function.hf_data import *
 from mint.api.api_functions import *
 from mint.api.api_curd import *
 

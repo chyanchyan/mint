@@ -1,6 +1,8 @@
 import shutil
 import os
 import sys
+from sqlalchemy import text
+
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
@@ -172,11 +174,22 @@ def refresh_models():
 def create_tables():
     engine, con, url = get_engine_con_url('data')
     engine = create_engine(url)
-    con.close()
     print("creating tables")
-    models.Base.metadata.create_all(engine)
+    while True:
+        try:
+            models.Base.metadata.create_all(engine)
+            break
+        except sqlalchemy.exc.OperationalError as e:
+            if e.orig.args[0] == 1049:
+                schema = e.orig.args[1].split("'")[1]
+                print(f'schema "{schema}" doesnt exist.')
+                print('creating...')
+                con.execute(text(f'create schema {schema}'))
+                print(f'schema "{schema}" created')
+            else:
+                raise e
     print("tables created")
-
+    con.close()
 
 DB_SCHEMAS_INFO, DB_TABLES_INFO, DB_COLS_INFO = refresh_table_info_to_db()
 refresh_models()
@@ -185,11 +198,3 @@ create_tables()
 TABLES = get_tables('data')
 print(f'host name: {HOST_NAME}')
 
-
-if __name__ == '__main__':
-    gs = dict(globals()['glb'].__dict__)
-    gs_ = copy(gs)
-    for key in gs:
-        if key[:2] == '__':
-            gs_.pop(key)
-    print(to_json_str(gs_))

@@ -167,6 +167,9 @@ def db_fill_change_null_value(
         validate_by_to: bool = True,
         is_sorted = False
 ):
+    print('*' * 100)
+    print(df_to_fill)
+    print('*' * 100)
     digits = 8
     if not is_sorted:
         df_to_fill_copy = df_to_fill.sort_values([index, date_col])
@@ -208,13 +211,13 @@ def db_fill_change_null_value(
                 elif to_value is None:
                     u_delta_value = round(delta_value, digits)
                     u_to_value = round(delta_value, digits)
-                else:
-                    if validate_by_to:
-                        u_delta_value = round(to_value, digits)
-                        u_to_value = round(to_value, digits)
-                    else:
-                        u_delta_value = round(delta_value, digits)
-                        u_to_value = round(delta_value, digits)
+                # else:
+                #     if validate_by_to:
+                #         u_delta_value = round(to_value, digits)
+                #         u_to_value = round(to_value, digits)
+                #     else:
+                #         u_delta_value = round(delta_value, digits)
+                #         u_to_value = round(delta_value, digits)
             else:
                 # 若期间缺失某一个值
                 if delta_value is None and to_value is not None:
@@ -323,7 +326,8 @@ def db_get_df_changes(
         date_col: str,
         st_date: dt = None,
         exp_date: dt = None,
-        filter_sql: str = None
+        filter_sql: str = None,
+        equal_delta_to: bool = True
 ):
     if st_date is None:
         st_date = dt.strptime('1970-01-01', '%Y-%m-%d')
@@ -361,13 +365,14 @@ def db_get_df_changes(
         sql=sql_less_max,
         con=con
     )
-    # df_less_max[date_col] = st_date - relativedelta(seconds=1)
+
     df_less_max['_is_less_max'] = 1
     df_rest = pd.read_sql(
         sql=sql_rest,
         con=con
     )
-    df_less_max[delta_col] = df_less_max[to_col]
+    if equal_delta_to:
+        df_less_max[delta_col] = df_less_max[to_col]
     res = pd.concat([df_less_max, df_rest]).sort_values([index, date_col]).reset_index(drop=True)
 
     return res
