@@ -37,6 +37,22 @@ def get_con(schema_tag=None):
         )[1]
 
 
+def get_fg_data_con():
+    host = DB_PARAMS['db_fg_host']
+    port = DB_PARAMS['db_fg_port']
+    username = DB_PARAMS['db_fg_username']
+    password = DB_PARAMS['db_fg_password']
+    schema = 'soams_dxm'
+    charset = DB_PARAMS['db_fg_charset']
+    url = str(
+        f'mysql+pymysql://{username}:{password}@{host}:{port}/'
+        f'{schema}?charset={charset}&autocommit=true'
+    )
+    engine = create_engine(url=url)
+    con = engine.connect()
+    return con
+
+
 def get_engine_con_url(schema_tag=None):
     if schema_tag is None:
         return db_connect_db(

@@ -5,10 +5,13 @@ import pandas as pd
 import numpy as np
 import pymysql
 import sqlalchemy.exc
+from dns.dnssec import key_id
 from sqlalchemy import create_engine
 
 import os
 import sys
+
+from mint.helper_function.hf_string import get_first_letter_of_dash_name
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
@@ -167,9 +170,6 @@ def db_fill_change_null_value(
         validate_by_to: bool = True,
         is_sorted = False
 ):
-    print('*' * 100)
-    print(df_to_fill)
-    print('*' * 100)
     digits = 8
     if not is_sorted:
         df_to_fill_copy = df_to_fill.sort_values([index, date_col])
@@ -179,17 +179,18 @@ def db_fill_change_null_value(
     df_filled = df_to_fill_copy.copy()
 
     if len(df_to_fill_copy) == 0:
-        print('all data filled')
         return df_filled, []
     fill_sqls = []
     for index_value, g in df_to_fill_copy.groupby(index):
         last_to = 0
         for i, (row_index, g_row) in enumerate(g.iterrows()):
-            row_id = g_row['id']
+            try:
+                row_id = g_row['id']
+            except KeyError:
+                prefix = get_first_letter_of_dash_name(table_name)
+                row_id = g_row[f'{prefix}.id']
             delta_value = copy(g_row[delta_col])
             to_value = copy(g_row[to_col])
-            # if to_value is None:
-            #     to_value = np.nan
 
             u_to_value = copy(to_value)
             u_delta_value = copy(delta_value)
@@ -211,13 +212,6 @@ def db_fill_change_null_value(
                 elif to_value is None:
                     u_delta_value = round(delta_value, digits)
                     u_to_value = round(delta_value, digits)
-                # else:
-                #     if validate_by_to:
-                #         u_delta_value = round(to_value, digits)
-                #         u_to_value = round(to_value, digits)
-                #     else:
-                #         u_delta_value = round(delta_value, digits)
-                #         u_to_value = round(delta_value, digits)
             else:
                 # 若期间缺失某一个值
                 if delta_value is None and to_value is not None:
@@ -271,10 +265,28 @@ def db_fill_change_null_value(
                 fill_sqls.append(sql)
 
             last_to = copy(u_to_value)
-            print('*' * 100)
-            print(df_filled)
-            print('*' * 100)
     return df_filled, fill_sqls
+
+
+def db_refresh_delta_by_to(
+        df_to_fill: pd.DataFrame,
+        index,
+        date_col,
+        delta_col,
+        to_col,
+        is_sorted=False
+):
+    def get_delta_col(g):
+        g[delta_col] = g[to_col].diff().fillna(g[to_col].iloc[0])
+        return g
+
+    if not is_sorted:
+        df_to_fill_copy = df_to_fill.sort_values([index, date_col])
+    else:
+        df_to_fill_copy = df_to_fill.copy()
+    res = df_to_fill_copy.replace(np.nan, None).replace(pd.NaT, None)
+    res = res.groupby(index).apply(get_delta_col).reset_index(drop=True)
+    return res
 
 
 def db_check_change_delta_and_to_value(
@@ -321,9 +333,9 @@ def db_get_df_changes(
         con,
         table_name: str,
         index: str,
-        delta_col: str,
-        to_col: str,
         date_col: str,
+        delta_col: str = None,
+        to_col: str = None,
         st_date: dt = None,
         exp_date: dt = None,
         filter_sql: str = None,
@@ -371,7 +383,7 @@ def db_get_df_changes(
         sql=sql_rest,
         con=con
     )
-    if equal_delta_to:
+    if equal_delta_to and delta_col is not None and to_col is not None:
         df_less_max[delta_col] = df_less_max[to_col]
     res = pd.concat([df_less_max, df_rest]).sort_values([index, date_col]).reset_index(drop=True)
 
