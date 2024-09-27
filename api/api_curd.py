@@ -115,6 +115,7 @@ def update_tree(
         index_col=None,
         index_values=None,
         submit_values: Dict[str, pd.DataFrame] = None,
+        change_table=False,
         preview=True,
         **kwargs
 ):
@@ -130,6 +131,7 @@ def update_tree(
         dtree=dtree,
         prev_values_set=prev_values_set,
         submit_values=submit_values,
+        change_table=change_table,
         preview=preview,
         **kwargs
     )
@@ -140,63 +142,76 @@ def update_tree_exec(
         dtree,
         prev_values_set,
         submit_values: Dict[str, pd.DataFrame] = None,
+        change_table=False,
         preview=True,
         **kwargs
 ):
 
     table_changes = {}
     for table_root, df in submit_values.items():
-        visible_cols = [col for col in TABLES[table_root].cols if col.web_visible == 1]
+        visible_cols = [col for col in TABLES[table_root].cols if col.web_visible == 1 or col.col_name == 'id']
         prev_values = prev_values_set[table_root].reset_index().to_dict(orient='records')
         cur_values = submit_values[table_root]
         row_changes = []
-        if len(prev_values) >= len(cur_values):
+
+        if change_table:
+            cur_values = [cur_row for cur_row in cur_values if cur_row['_block'] == 'new']
             for i, cur_row in enumerate(cur_values):
-                value_changes = {}
-                prev_row = prev_values[i]
-                for col in visible_cols:
-                    col_name = col.col_name
-                    pv = prev_row[col_name]
-                    try:
-                        cv = cur_row[col_name]
-                    except KeyError:
-                        cv = None
-                    value_changes[col_name] = (pv, cv)
-                row_changes.append(value_changes)
-
-            for i, prev_row in enumerate(prev_values[len(cur_values):]):
-                value_changes = {}
-                for col in visible_cols:
-                    col_name = col.col_name
-                    pv = prev_row[col_name]
-                    cv = '[delete]'
-                    value_changes[col_name] = (pv, cv)
-                row_changes.append(value_changes)
-        else:
-            for i, prev_row in enumerate(prev_values):
-                value_changes = {}
-                cur_row = cur_values[i]
-                for col in visible_cols:
-                    col_name = col.col_name
-                    pv = prev_row[col_name]
-                    try:
-                        cv = cur_row[col_name]
-                    except KeyError:
-                        cv = None
-                    value_changes[col_name] = (pv, cv)
-                row_changes.append(value_changes)
-
-            for i, cur_row in enumerate(cur_values[len(prev_values):]):
                 value_changes = {}
                 for col in visible_cols:
                     col_name = col.col_name
                     pv = '[add]'
-                    try:
-                        cv = cur_row[col_name]
-                    except KeyError:
-                        cv = None
+                    cv = cur_row[col_name]
                     value_changes[col_name] = (pv, cv)
                 row_changes.append(value_changes)
+        else:
+            if len(prev_values) >= len(cur_values):
+                for i, cur_row in enumerate(cur_values):
+                    value_changes = {}
+                    prev_row = prev_values[i]
+                    for col in visible_cols:
+                        col_name = col.col_name
+                        pv = prev_row[col_name]
+                        try:
+                            cv = cur_row[col_name]
+                        except KeyError:
+                            cv = None
+                        value_changes[col_name] = (pv, cv)
+                    row_changes.append(value_changes)
+
+                for i, prev_row in enumerate(prev_values[len(cur_values):]):
+                    value_changes = {}
+                    for col in visible_cols:
+                        col_name = col.col_name
+                        pv = prev_row[col_name]
+                        cv = '[delete]'
+                        value_changes[col_name] = (pv, cv)
+                    row_changes.append(value_changes)
+            else:
+                for i, prev_row in enumerate(prev_values):
+                    value_changes = {}
+                    cur_row = cur_values[i]
+                    for col in visible_cols:
+                        col_name = col.col_name
+                        pv = prev_row[col_name]
+                        try:
+                            cv = cur_row[col_name]
+                        except KeyError:
+                            cv = None
+                        value_changes[col_name] = (pv, cv)
+                    row_changes.append(value_changes)
+
+                for i, cur_row in enumerate(cur_values[len(prev_values):]):
+                    value_changes = {}
+                    for col in visible_cols:
+                        col_name = col.col_name
+                        pv = '[add]'
+                        try:
+                            cv = cur_row[col_name]
+                        except KeyError:
+                            cv = None
+                        value_changes[col_name] = (pv, cv)
+                    row_changes.append(value_changes)
 
         table_changes[table_root] = row_changes
 

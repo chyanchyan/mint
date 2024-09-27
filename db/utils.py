@@ -55,7 +55,7 @@ def db_get_url(**db_params):
 
 def db_get_engine(**db_params):
     url = db_get_url(**db_params)
-    return create_engine(url=url)
+    return create_engine(url=url, pool_recycle=1800, pool_pre_ping=True)
 
 
 def db_connect_db(create_if_not_exist=True, **db_params):
