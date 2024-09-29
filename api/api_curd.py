@@ -303,7 +303,7 @@ def update_tree_exec(
                             sql = f"delete from {table_root} where id = {row_id}"
                             sqls.append((text(sql), {}))
                         elif row_change['id'][0] == '[add]':
-                            row = {col: row_change[col][1] for col in row_change.keys()}
+                            row = {col: row_change[col][1] for col in row_change.keys() if col != 'id'}
                             sql = f"insert into {table_root} ({', '.join(row.keys())}) values ({', '.join([f':{v}' for v in row.keys()])})"
                             sqls.append((text(sql), row))
                         else:
