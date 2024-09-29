@@ -310,7 +310,7 @@ def update_tree_exec(
                             row_id = row_change['id'][0]
                             row = {col: row_change[col][1] for col in row_change.keys()}
                             if len(row) > 0:
-                                sql = f"update {table_root} set {', '.join([f'{col} = :{col}' for col in row.keys()])} where id = {row_id}"
+                                sql = f"update {table_root} set {', '.join([f'{col} = :{col}' for col in row.keys() if col != 'id'])} where id = {row_id}"
                                 sqls.append((text(sql), row))
 
         for item in sqls:
