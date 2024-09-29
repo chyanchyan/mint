@@ -398,7 +398,7 @@ def render_booking_xl_sheet(output_path, template_path, data_tree: DataTree):
             is_selected_values=True,
             show_non_display_name=False,
             fill_headers=False,
-            value_row_offset=len(parent.data)
+            value_row_offset=len(parent.data) + 2
         )
 
         ws_parent_booking.row_dimensions[6].hidden = True
