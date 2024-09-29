@@ -169,16 +169,16 @@ def db_get_last_non_null_rows(
         target_col: str
 ):
     sql = f"""
-        WITH ranked_rows AS (
-            SELECT 
-                *,
-                ROW_NUMBER() OVER (PARTITION BY `{index}` ORDER BY `{date_col}` DESC) AS row_num
+        SELECT t1.*
+        FROM {table_name} t1
+        JOIN (
+            SELECT `{index}`, MAX(`{date_col}`) AS max_date
             FROM {table_name}
             WHERE `{target_col}` IS NOT NULL
-        )
-        SELECT *
-        FROM ranked_rows
-        WHERE row_num = 1;
+            GROUP BY `{index}`
+        ) t2
+        ON t1.`{index}` = t2.`{index}` AND t1.`{date_col}` = t2.max_date
+        WHERE t1.`{target_col}` IS NOT NULL;
     """
     res = pd.read_sql(
         sql=sql,
