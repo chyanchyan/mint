@@ -174,7 +174,7 @@ def db_get_last_non_null_rows(
                 *,
                 ROW_NUMBER() OVER (PARTITION BY `{index}` ORDER BY `{date_col}` DESC) AS row_num
             FROM {table_name}
-            WHERE {target_col} IS NOT NULL
+            WHERE `{target_col}` IS NOT NULL
         )
         SELECT *
         FROM ranked_rows
