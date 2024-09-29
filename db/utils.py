@@ -116,8 +116,8 @@ def db_get_first_delta_to_null_rows_and_all_rest_rows(
         table_name: str,
         index: str,
         date_col: str,
-        delta_col: str,
-        to_col: str
+        delta_col: str = None,
+        to_col: str = None
 ):
     sql = f"""
             WITH ranked_data AS (
@@ -125,8 +125,8 @@ def db_get_first_delta_to_null_rows_and_all_rest_rows(
                     `id`,
                     `{index}`,
                     `{date_col}`,
-                    `{delta_col}`,
-                    `{to_col}`,
+                    {f"`{delta_col}`, " if delta_col is not None else ''}
+                    {f"`{to_col}`, " if to_col is not None else ''}
                     ROW_NUMBER() OVER (PARTITION BY `{index}` ORDER BY `{date_col}`) AS rn
                 FROM 
                     {table_name}
@@ -138,7 +138,7 @@ def db_get_first_delta_to_null_rows_and_all_rest_rows(
                 FROM 
                     ranked_data
                 WHERE 
-                    `{delta_col}` IS NULL OR `{to_col}` IS NULL
+                    {' OR '.join([f"`{col}` IS NULL" for col in [delta_col, to_col] if col is not None])}
                 GROUP BY 
                     `{index}`
             )
@@ -158,6 +158,34 @@ def db_get_first_delta_to_null_rows_and_all_rest_rows(
         sql=sql,
         con=con
     )
+    return res
+
+
+def db_get_last_non_null_rows(
+        con,
+        table_name: str,
+        index: str,
+        date_col: str,
+        target_col: str
+):
+    sql = f"""
+        WITH ranked_rows AS (
+            SELECT 
+                *,
+                ROW_NUMBER() OVER (PARTITION BY `{index}` ORDER BY `{date_col}` DESC) AS row_num
+            FROM {table_name}
+            WHERE {target_col} IS NOT NULL
+        )
+        SELECT *
+        FROM ranked_rows
+        WHERE row_num = 1;
+    """
+    res = pd.read_sql(
+        sql=sql,
+        con=con
+    )
+    return res
+
 
 
 def db_fill_change_null_value(

@@ -803,6 +803,21 @@ class DataTree(Tree):
 
         return res
 
+    def get_all_parents_with_values(self, res=None):
+        if res is None:
+            res = {}
+        for dp in self.ps:
+            if dp.root not in res:
+                res[dp.root] = dp
+            else:
+                res[dp.root].data = pd.concat([res[dp.root].data, dp.data])
+            res = dp.get_all_parents_with_values(res=res)
+
+        for dc in self.cs:
+            res = dc.get_all_parents_with_values(res=res)
+
+        return res
+
 
     def get_all_parents_with_full_value(self):
         res = {}

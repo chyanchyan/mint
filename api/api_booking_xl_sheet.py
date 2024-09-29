@@ -7,13 +7,17 @@ from openpyxl.cell import Cell
 import pandas as pd
 import os
 import sys
+
+from mint.db.utils import get_con
+from mint.sys_init import TABLES
+
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
 
 if parent_dir not in sys.path:
     sys.path.append(parent_dir)
 
-from mint.db.tree import DataTree
+from mint.db.tree import DataTree, Tree
 
 
 def apply_cell_format(cell_src: Cell, cell_target: Cell):
@@ -96,7 +100,9 @@ def fill_table(
         values=None,
         is_selected_values=False,
         start_value_row_index=0,
-        show_non_display_name=False
+        show_non_display_name=False,
+        fill_headers=True,
+        value_row_offset=0
 ):
 
     parent_table_data_start_row = 8
@@ -122,16 +128,17 @@ def fill_table(
     ]
 
     # fill table label
-    apply_cell_format(
-        cell_src=ws_booking.cell(row=dst_row, column=dst_col + 1, value=table.label),
-        cell_target=cell_formats['table_label']
-    )
+    if fill_headers:
+        apply_cell_format(
+            cell_src=ws_booking.cell(row=dst_row, column=dst_col + 1, value=table.label),
+            cell_target=cell_formats['table_label']
+        )
 
-    # fill table name
-    if direction == 'vertical':
-        ws_booking.cell(row=dst_row - 1, column=dst_col + 2, value=table.table_name)
-    elif direction == 'horizontal':
-        ws_booking.cell(row=dst_row, column=dst_col + 2, value=table.table_name)
+        # fill table name
+        if direction == 'vertical':
+            ws_booking.cell(row=dst_row - 1, column=dst_col + 2, value=table.table_name)
+        elif direction == 'horizontal':
+            ws_booking.cell(row=dst_row, column=dst_col + 2, value=table.table_name)
 
     # fill root cols
     value_row_index = int(start_value_row_index)
@@ -201,46 +208,56 @@ def fill_table(
                     cell_default.value = values[col.col_name][0]
 
         elif direction == 'horizontal':
-            cell_col = ws_booking.cell(row=dst_row, column=dst_col + col_idx + 3, value=col_label)
-            ws_booking.cell(row=dst_row + 1, column=dst_col + col_idx + 3, value=col.col_name)
             cell_default = ws_booking.cell(row=dst_row + 2, column=dst_col + col_idx + 3)
 
-            if col.table_name == 'auto_name':
-                auto_naming_cols = sorted([
-                    (i, col)
-                    for i, col in enumerate(col_list)
-                    if not (pd.isna(col.naming_field_order) or col.naming_field_order is None)
-                ], key=lambda x: x[1].naming_field_order)
-                auto_naming_col_addrs = [f'{get_column_letter(dst_col + item[0] + 3)}{dst_row + 2}' for item in auto_naming_cols]
-                default_value = '=' + '&"-"&'.join(auto_naming_col_addrs)
-                apply_cell_format(cell_default, cell_formats['auto_name'])
-            else:
-                if not pd.isna(col.foreign_key) and col.foreign_key is not None:
+            if fill_headers:
+                cell_col = ws_booking.cell(row=dst_row, column=dst_col + col_idx + 3, value=col_label)
+                ws_booking.cell(row=dst_row + 1, column=dst_col + col_idx + 3, value=col.col_name)
+
+                if col.table_name == 'auto_name':
+                    auto_naming_cols = sorted([
+                        (i, col)
+                        for i, col in enumerate(col_list)
+                        if not (pd.isna(col.naming_field_order) or col.naming_field_order is None)
+                    ], key=lambda x: x[1].naming_field_order)
+                    auto_naming_col_addrs = [f'{get_column_letter(dst_col + item[0] + 3)}{dst_row + 2}' for item in auto_naming_cols]
+                    default_value = '=' + '&"-"&'.join(auto_naming_col_addrs)
+                    apply_cell_format(cell_default, cell_formats['auto_name'])
+                else:
+                    if not pd.isna(col.foreign_key) and col.foreign_key is not None:
+                        db_name, foreign_table, foreign_key = col.foreign_key.split('.')
+                        if foreign_table != root:
+                            default_value = col.default
+                        else:
+                            default_value = formula1
+                    else:
+                        default_value = col.default
+                cell_default.value = default_value
+
+                if col.foreign_key and not pd.isna(col.foreign_key):
                     db_name, foreign_table, foreign_key = col.foreign_key.split('.')
                     if foreign_table != root:
-                        default_value = col.default
-                    else:
-                        default_value = formula1
-                else:
-                    default_value = col.default
-            cell_default.value = default_value
+                        ws_booking.cell(
+                            row=dst_row - 1,
+                            column=dst_col + col_idx + 3,
+                            value='fk=' + tables[foreign_table].label
+                        )
+            else:
+                cell_col = ws_booking.cell(row=dst_row, column=dst_col + col_idx + 3)
 
-            if col.foreign_key and not pd.isna(col.foreign_key):
-                db_name, foreign_table, foreign_key = col.foreign_key.split('.')
-                if foreign_table != root:
-                    ws_booking.cell(
-                        row=dst_row - 1,
-                        column=dst_col + col_idx + 3,
-                        value='fk=' + tables[foreign_table].label
-                    )
             if values:
                 try:
                     col_values = values[col.col_name]
 
                     for r, value in enumerate(col_values.values()):
-                        cell_value = ws_booking.cell(row=dst_row + 2 + r + 1, column=dst_col + col_idx + 3, value=value)
+                        if fill_headers:
+                            row = dst_row + value_row_offset + 2 + r + 1
+                        else:
+                            row = dst_row + value_row_offset + r + 1
+
+                        cell_value = ws_booking.cell(row=row, column=dst_col + col_idx + 3, value=value)
                         if not is_selected_values:
-                            ws_booking.cell(row=dst_row + 2 + r + 1, column=dst_col, value=f'row{value_row_index}')
+                            ws_booking.cell(row=row, column=dst_col, value=f'row{value_row_index}')
                             apply_cell_format(
                                 cell_src=cell_value,
                                 cell_target=cell_formats[col.web_obj]
@@ -258,7 +275,7 @@ def fill_table(
                                     apply_data_validation(sheet=ws_booking, cell=cell_value, col=col,
                                                           formula1=formula1)
                                 else:
-                                    ws_booking.cell(row=dst_row + 2 + r + 1, column=dst_col + col_idx + 3, value=formula1)
+                                    ws_booking.cell(row=row, column=dst_col + col_idx + 3, value=formula1)
                             if col.web_obj == 'radio':
                                 apply_radio_validation(
                                     sheet=ws_booking, cell=cell_value
@@ -343,10 +360,13 @@ def render_booking_xl_sheet(output_path, template_path, data_tree: DataTree):
     value_row_index = 0
 
     # fill parent tables
-    parents_trees = data_tree.get_all_parents_with_full_value()
-    for parent_name, parent in parents_trees.items():
+    parent_trees = data_tree.get_all_parents_with_values()
+    parents_trees_full_value = data_tree.get_all_parents_with_full_value()
+
+    for parent_name, parent in parent_trees.items():
         ws_parent_booking = wb.copy_worksheet(wb['bks_root'])
         ws_parent_booking.title = 'bks_' + parent.table.label
+        parent_full_value = parents_trees_full_value[parent.root]
         value_row_index = fill_table(
             root=root,
             ws_booking=ws_parent_booking,
@@ -358,9 +378,27 @@ def render_booking_xl_sheet(output_path, template_path, data_tree: DataTree):
             table=parent.table,
             tables=tables,
             direction='horizontal',
-            values={parent.reffed: parent.data.reset_index().to_dict()[parent.reffed]},
-            is_selected_values=True,
+            start_value_row_index=value_row_index,
+            values=parent.data.reset_index().to_dict(),
             show_non_display_name=False
+        )
+
+        fill_table(
+            root=root,
+            ws_booking=ws_parent_booking,
+            ws_cell_format=ws_cell_format,
+            cell_formats=cell_formats,
+            select_values=select_values,
+            dst_row=5,
+            dst_col=1,
+            table=parent.table,
+            tables=tables,
+            direction='horizontal',
+            values={parent.reffed: parent_full_value.data.reset_index().to_dict()[parent.reffed]},
+            is_selected_values=True,
+            show_non_display_name=False,
+            fill_headers=False,
+            value_row_offset=len(parent.data)
         )
 
         ws_parent_booking.row_dimensions[6].hidden = True
@@ -416,4 +454,12 @@ def render_booking_xl_sheet(output_path, template_path, data_tree: DataTree):
     wb.save(output_path)
 
 
-
+if __name__ == '__main__':
+    con = get_con('data')
+    t = Tree(
+        con=con,
+        root='project',
+        tables=TABLES,
+    )
+    for item in list(t.get_all_parents().keys()):
+        print(item)

@@ -14,6 +14,7 @@ from mint.helper_function.hf_data import is_equal
 from mint.sys_init import *
 from mint.db.tree import DataTree
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from typing import Dict
 
 
@@ -21,8 +22,20 @@ def create(
         con,
         root,
         df: pd.DataFrame,
+        skip_dups=True
 ):
-    df.to_sql(root, con=con, if_exists='append', index=False)
+    try:
+        df.to_sql(root, con=con, if_exists='append', index=False)
+    except IntegrityError as e:
+        if e.args[0] == 1062:
+            if skip_dups:
+                for i, row in df.iterrows():
+                    try:
+                        df.loc[i].to_sql(root, con=con, if_exists='append', index=False)
+                    except IntegrityError as e:
+                        pass
+            else:
+                raise e
 
 
 def create_tree(
@@ -269,12 +282,18 @@ def update_tree_exec(
                         str(row['id']) for row in
                         prev_values_set[table_root].reset_index().to_dict(orient='records')
                     ]
-                    prev_ids = ', '.join(prev_ids)
-                    sql = f"delete from {table_root} where id in ({prev_ids})"
-                    sqls.append((text(sql), {}))
+                    if len(prev_ids) > 0:
+                        prev_ids = ', '.join(prev_ids)
+                        sql = f"delete from {table_root} where id in ({prev_ids})"
+                        sqls.append((text(sql), {}))
 
                     for row_change in row_changes:
                         row = {col: row_change[col][1] for col in row_change.keys()}
+                        if table_root in [c.root for c in dtree.children]:
+                            ref = dtree.c[table_root].ref
+                            reffed = dtree.c[table_root].reffed
+                            reffed_values = dtree.data[reffed].values[0]
+                            row[ref] = reffed_values
                         sql = f"insert into {table_root} ({', '.join(row.keys())}) values ({', '.join([f':{v}' for v in row.keys()])})"
                         sqls.append((text(sql), row))
                 else:
