@@ -396,14 +396,18 @@ def tree_dict_to_json(tree_dict):
     return res
 
 
-def gen_booking_xl_sheet_file(con, root, row_id='', **kwargs):
+def gen_booking_xl_sheet_file(con, root, row_id='', index_col=None, index_value=None, **kwargs):
     timestamp = dt.now().strftime("%Y%m%d_%H%M%S_%f")
     dtree = DataTree(root=root, con=con, tables=TABLES)
     if row_id != "":
         dtree.from_sql(index_col='id', index_values={row_id})
         p_name = dtree.relevant_data_set[root]["name"].values[0]
     else:
-        p_name = '录入模板'
+        if index_col is not None:
+            dtree.from_sql(index_col=index_col, index_values={index_value})
+            p_name = dtree.relevant_data_set[root][index_col].values[0]
+        else:
+            p_name = '录入模板'
 
     template_path = os.path.join(PATH_ROOT, 'api', 'booking_xl_template.xlsm')
     output_folder = os.path.join(PATH_OUTPUT, 'booking_xl_sheet')
