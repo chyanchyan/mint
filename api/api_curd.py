@@ -27,16 +27,20 @@ def create(
     try:
         df.to_sql(root, con=con, if_exists='append', index=False)
     except IntegrityError as e:
-        if e.args[0] == 1062:
+        if e.orig.args[0] == 1062:
             if skip_dups:
                 for i, row in df.iterrows():
                     try:
-                        df.loc[i].to_sql(root, con=con, if_exists='append', index=False)
+                        df_row = pd.DataFrame(data=row.to_dict(), columns=[col.col_name for col in TABLES[root].cols], index=[0])
+                        df_row.to_sql(root, con=con, if_exists='append', index=False)
                     except IntegrityError as e:
+                        print('Duplicate entry. skipping.')
+                        print(row)
                         pass
             else:
                 raise e
-
+        else:
+            raise e
 
 def create_tree(
         con,
