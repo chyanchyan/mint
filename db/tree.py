@@ -879,7 +879,7 @@ class DataTree(Tree):
                 col_obj for col_obj in child.table.cols
                 if not pd.isna(col_obj.naming_field_order)
             ], key=lambda x: x.naming_field_order)
-            if len(naming_cols) > 0:
+            if len(naming_cols) > 0 and len(child_df) > 0:
                 child_df['name'] = child_df.apply(
                     lambda x: '-'.join([
                         x[col_obj.col_name] for col_obj in naming_cols
