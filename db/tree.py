@@ -862,7 +862,11 @@ class DataTree(Tree):
         relevant_data_set[self.root] = root_df
 
         for child in self.children:
-            anchor_x = root_df_raw.iloc[:, 2].to_list().index(child.root) + 4
+            try:
+                anchor_x = root_df_raw.iloc[:, 2].to_list().index(child.root) + 4
+            except ValueError:
+                print(f'child {child.root} not found in {root_sheet_name}')
+                continue
             child_df = get_crop_from_df(
                 df=root_df_raw,
                 anchor_x=anchor_x,
