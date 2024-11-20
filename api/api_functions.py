@@ -522,4 +522,4 @@ def check_unique(con, table_name, col_name, value, **kwargs):
     sql = 'SELECT * FROM {} WHERE {} = :value'.format(table_name, col_name)
     result = con.execute(text(sql), {'value': value})
 
-    return result.rowcount > 0
+    return result.rowcount == 0

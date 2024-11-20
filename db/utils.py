@@ -200,14 +200,14 @@ def db_fill_change_null_value(
 ):
     digits = 8
     if not is_sorted:
-        df_to_fill_copy = df_to_fill.sort_values([index, date_col])
+        df_to_fill_copy = df_to_fill.sort_values(date_col)
     else:
         df_to_fill_copy = df_to_fill.copy()
     df_to_fill_copy = df_to_fill_copy.replace(np.nan, None).replace(pd.NaT, None)
-    df_filled = df_to_fill_copy.copy()
-
     if len(df_to_fill_copy) == 0:
-        return df_filled, []
+        return df_to_fill_copy, []
+
+    df_filled = df_to_fill_copy.copy()
     fill_sqls = []
     for index_value, g in df_to_fill_copy.groupby(index):
         last_to = 0
@@ -224,14 +224,14 @@ def db_fill_change_null_value(
             u_delta_value = copy(delta_value)
             if i == 0:
                 if delta_value is None and to_value is None:
-                    if len(df_filled) == 1:
+                    if len(g) == 1:
                         # 若只有一行数据，则将缺失值设为0
                         u_delta_value = 0
                         u_to_value = 0
                     else:
                         # 若第一天就缺失全部值，则 `to` 等于第二天的值
                         u_delta_value = 0
-                        u_to_value = copy(df_filled.iloc[1, :][to_col])
+                        u_to_value = copy(g.iloc[1, :][to_col])
 
                 # 若第一天就缺失某一个值，则等于另一个值
                 elif delta_value is None:
