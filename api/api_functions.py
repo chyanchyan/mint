@@ -500,13 +500,17 @@ def get_stash_list(con, **kwargs):
         'root',
         'comment'
     ]
-    titles = [col.label for col in table.cols if col.col_name in col_names]
+    header_labels = [col.label for col in table.cols if col.col_name in col_names]
     data_types = [col.data_type for col in table.cols if col.col_name in col_names]
 
     sql = 'SELECT * FROM stash'
     df = pd.read_sql(sql, con=con).sort_values('id', ascending=False)[col_names]
 
-    res = df_to_ant_table_options(df=df, titles=titles, data_types=data_types)
+    res = df_to_mui_enhanced_table_options(
+        df=df,
+        header_labels=header_labels,
+        data_types=data_types
+    )
     return res
 
 
