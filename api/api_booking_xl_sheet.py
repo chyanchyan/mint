@@ -360,28 +360,28 @@ def render_booking_xl_sheet(output_path, template_path, data_tree: DataTree):
     value_row_index = 0
 
     # fill parent tables
-    parent_trees = data_tree.get_all_parents_with_values()
+    # parent_trees = data_tree.get_all_parents_with_values()
     parents_trees_full_value = data_tree.get_all_parents_with_full_value()
 
-    for parent_name, parent in parent_trees.items():
+    for parent_name, parent in parents_trees_full_value.items():
         ws_parent_booking = wb.copy_worksheet(wb['bks_root'])
         ws_parent_booking.title = 'bks_' + parent.table.label
         parent_full_value = parents_trees_full_value[parent.root]
-        value_row_index = fill_table(
-            root=root,
-            ws_booking=ws_parent_booking,
-            ws_cell_format=ws_cell_format,
-            cell_formats=cell_formats,
-            select_values=select_values,
-            dst_row=5,
-            dst_col=1,
-            table=parent.table,
-            tables=tables,
-            direction='horizontal',
-            start_value_row_index=value_row_index,
-            values=parent.data.reset_index().to_dict(),
-            show_non_display_name=False
-        )
+        # value_row_index = fill_table(
+        #     root=root,
+        #     ws_booking=ws_parent_booking,
+        #     ws_cell_format=ws_cell_format,
+        #     cell_formats=cell_formats,
+        #     select_values=select_values,
+        #     dst_row=5,
+        #     dst_col=1,
+        #     table=parent.table,
+        #     tables=tables,
+        #     direction='horizontal',
+        #     start_value_row_index=value_row_index,
+        #     values=parent.data.reset_index().to_dict(),
+        #     show_non_display_name=False
+        # )
 
         fill_table(
             root=root,
@@ -394,11 +394,12 @@ def render_booking_xl_sheet(output_path, template_path, data_tree: DataTree):
             table=parent.table,
             tables=tables,
             direction='horizontal',
+            start_value_row_index=0,
             values={parent.reffed: parent_full_value.data.reset_index().to_dict()[parent.reffed]},
             is_selected_values=True,
             show_non_display_name=False,
-            fill_headers=False,
-            value_row_offset=len(parent.data) + 2
+            # fill_headers=False,
+            # value_row_offset=len(parent.data) + 2
         )
 
         ws_parent_booking.row_dimensions[6].hidden = True

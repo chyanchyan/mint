@@ -8,23 +8,24 @@ import sys
 import os
 
 import pandas as pd
+from numpy.lib.function_base import interp
+from spacy.lang.lex_attrs import prefix
 from sqlalchemy.exc import OperationalError
 from sqlalchemy import text
-
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
 
 if parent_dir not in sys.path:
     sys.path.append(parent_dir)
-    
+
 from mint.sys_init import *
 from mint.db.utils import get_tables
 from mint.helper_function.hf_string import udf_format, to_json_obj, to_json_str
 from mint.helper_function.hf_file import mkdir
 from mint.db.tree import *
 from mint.api.api_booking_xl_sheet import render_booking_xl_sheet
-from mint.helper_function.hf_data import df_to_ant_table_options
+from mint.helper_function.hf_crypto import gen_uuid
 
 
 def migration_pandas(con, data_path, schema, if_exists):
@@ -32,7 +33,8 @@ def migration_pandas(con, data_path, schema, if_exists):
     try:
         data = pd.read_excel(data_path, index_col=False)
 
-        regular_cols = [col for col in data.columns.tolist() if col[:3] != 'dv_']
+        regular_cols = [col for col in data.columns.tolist() if
+                        col[:3] != 'dv_']
         dv_cols = [col for col in data.columns.tolist() if col[:3] == 'dv_']
         data_to_db = data[regular_cols]
 
@@ -87,7 +89,7 @@ def migrate_data_from_xl_folder(
             table_names.append(file[:-5])
 
     table_names.sort(key=lambda x: booking_sequence.index(x))
-    
+
     con = get_con()
     for table_name in table_names:
         file_name = os.path.join(folder, table_name + '.xlsx')
@@ -101,40 +103,37 @@ def migrate_data_from_xl_folder(
     con.close()
 
 
-def get_cell_options(con, right_angle_trees, res=None):
+def get_cell_options(con, root, right_angle_trees, res=None):
     if res is None:
         res = {}
     for t in right_angle_trees:
         for col in t.table.cols:
             if (
-                not pd.isna(col.foreign_key)
-                and col.foreign_key is not None
-                and col.foreign_key not in res
+                    not pd.isna(col.foreign_key)
+                    and col.foreign_key is not None
+                    and col.foreign_key not in res
             ):
-                ref_schema, ref_table, ref_col = col.foreign_key.split('.')
-                options = pd.read_sql(
-                    sql=f'select `{ref_col}` from `{ref_table}`',
-                    con=con
-                )[ref_col].tolist()
-                res[col.foreign_key] = options
+                if col.web_visible == 1:
+                    ref_schema, ref_table, ref_col = col.foreign_key.split('.')
+                    options = pd.read_sql(
+                        sql=f'select `{ref_col}` from `{ref_table}`',
+                        con=con
+                    )[ref_col].tolist()
+                    res[col.foreign_key] = options
 
-        res = get_cell_options(con, t.children, res)
+        res = get_cell_options(con, root, t.children, res)
 
     return res
 
 
-def get_right_angle_trees(
-        con,
-        root,
-        index_col=None,
-        index_values=None,
-        limit=0,
-        offset=None,
-        file_name_str=None,
-        stash_uuid=None,
-        fetch_parents=True,
-        **kwargs
-):
+def get_right_angle_trees(jo):
+    con = get_con('data')
+    root = jo['root']
+    file_name_str = jo['fileNameStr']
+    index_col = jo['indexCol']
+    index_values = jo['indexValues']
+    stash_uuid = jo['stashUuid']
+    print(jo)
     tables = get_tables('data')
     tree = Tree(con=con, tables=tables, root=root)
     if file_name_str is not None and file_name_str != '':
@@ -144,7 +143,7 @@ def get_right_angle_trees(
         dtree = DataTree(tree=tree)
         dtree.from_excel_booking_sheet(dfs=dfs)
         values = {
-            k: df.reset_index()
+            k: df.reset_index().to_dict(orient='records')
             for k, df in dtree.relevant_data_set.items()
         }
     else:
@@ -153,39 +152,58 @@ def get_right_angle_trees(
             dtree.from_sql(
                 index_col=index_col,
                 index_values=set(index_values),
-                limit=None,
-                offset=offset
             )
+            dfs = {
+                k: df[[
+                    col.col_name for col in TABLES[k].cols if
+                    col.web_visible == 1
+                ]] for k, df in dtree.relevant_data_set.items()
+            }
 
             values = {
-                k: df.reset_index()
-                for k, df in dtree.relevant_data_set.items()
-                if fetch_parents or k in [root] + [child.root for child in dtree.children]
+                k: df.reset_index().to_dict(orient='records')
+                for k, df in dfs.items()
+                if k in [root] + [
+                    child.root for child in
+                    dtree.children
+                ] + [
+                    table_name for table_name in dtree.all_parenthood_names()
+                    if TABLES[table_name].fetchable_parent == 1
+                ]
             }
         else:
             if stash_uuid is not None and stash_uuid != '':
                 relevant_data_set_res = con.execute(
                     text(
-                        'select root, relevant_data_set from stash where stash_uuid = :stash_uuid'
+                        'select `root`, `values` from stash where stash_uuid = '
+                        ':stash_uuid'
                     ),
                     {'stash_uuid': stash_uuid}
                 )
                 if relevant_data_set_res.rowcount > 0:
-                    relevant_data_set = to_json_obj(relevant_data_set_res.fetchone()[1])
+                    values_str = relevant_data_set_res.fetchone()[1]
+                    print(stash_uuid, values_str)
+                    ds = to_json_obj(values_str)
                     values = {
-                        k: pd.DataFrame(v).reset_index()
-                        for k, v in relevant_data_set.items()
-                        if fetch_parents or k in [root] + [child.root for child in dtree.children]
+                        k: pd.DataFrame(d).reset_index()[[
+                            col.col_name for col in TABLES[k].cols if
+                            col.web_visible == 1
+                        ]].to_dict(
+                            orient='records')
+                        for k, d in ds.items() if len(d) > 0
                     }
                 else:
-                    values = {root: []}
+                    values = {root: [{col.col_name: col.default for col in
+                                      dtree.table.cols}]}
             else:
-                values = {root: []}
+                values = {root: [
+                    {col.col_name: col.default for col in dtree.table.cols}]}
     right_angle_trees = get_right_angle_trees_from_tree(tree=dtree)
     right_angle_trees_json = [t.json_obj for t in right_angle_trees]
 
     cell_options = get_cell_options(
         con=con,
+        root=root,
         right_angle_trees=right_angle_trees,
     )
 
@@ -194,7 +212,8 @@ def get_right_angle_trees(
     res = {
         'tree': right_angle_trees_json,
         'values': values,
-        'options': cell_options
+        'options': cell_options,
+        'tables': {key: table.to_json_obj() for key, table in TABLES.items()}
     }
 
     return res
@@ -213,7 +232,8 @@ def get_nested_values(
     con = get_con('data')
     tables = get_tables('data')
     dtree = DataTree(root=root, con=con, tables=tables)
-    dtree.from_sql(limit=limit, offset=offset, index_col=index_col, index_values=index_values)
+    dtree.from_sql(limit=limit, offset=offset, index_col=index_col,
+                   index_values=index_values)
 
     dtree.fill_na_with_none()
     json_obj = dtree.nested_values(full_detail=full_detail)
@@ -234,7 +254,8 @@ def get_booking_structure(in_json_obj):
 
     select_values = dtree.get_parents_select_values()
 
-    json_obj = {'field_structure': t_branch.json_obj, 'select_values': select_values}
+    json_obj = {'field_structure': t_branch.json_obj,
+                'select_values': select_values}
 
     return json_obj
 
@@ -248,7 +269,8 @@ def mark_ref_value(root, rows, parents, tables):
                 p_data = ref_cell_data[0]
                 p_data = mark_auto_name(d=p_data, table=tables[p_name])
                 p_d = {p_name: p_data}
-                p_d, extra_parents_output = fetch_data_from_dict(d=p_d, tables=tables)
+                p_d, extra_parents_output = fetch_data_from_dict(d=p_d,
+                                                                 tables=tables)
                 parents_output.append(p_d)
                 parents_output.extend(extra_parents_output)
                 try:
@@ -282,7 +304,8 @@ def fetch_data_from_dict(d, tables):
             except KeyError:
                 rows[item_name] = item_data
 
-    rows, parents_output = mark_ref_value(root=root, rows=rows, parents=parents, tables=tables)
+    rows, parents_output = mark_ref_value(root=root, rows=rows, parents=parents,
+                                          tables=tables)
 
     return {root: rows}, parents_output
 
@@ -299,14 +322,16 @@ def mark_child_name(d_dfs, tree):
             col for col_name, col in tree.table.cols.items()
             if col.foreign_key
         ]
-        name_ref_col = [col for col in name_ref_col if col.foreign_key.split('.')[0] == naming_from][0]
+        name_ref_col = [col for col in name_ref_col if
+                        col.foreign_key.split('.')[0] == naming_from][0]
         root_data_tree = DataTree(tree=tree)
         root_data_tree.from_sql(
             index_col=name_ref_col.col_name,
             index_values={root_df[name_ref_col.col_name].values[0]}
         )
         root_df['name'] = root_df.apply(
-            lambda x: '-'.join([x[name_ref_col.col_name], tree.root, str(len(root_data_tree.data))]),
+            lambda x: '-'.join([x[name_ref_col.col_name], tree.root,
+                                str(len(root_data_tree.data))]),
             axis=1
         )
 
@@ -336,10 +361,12 @@ def mark_auto_name(d, table):
         if not pd.isna(col.naming_field_order)
     ]
     if len(naming_cols) > 0:
-        naming_cols = [field for field, order in sorted(naming_cols, key=lambda x: x[1])]
+        naming_cols = [field for field, order in
+                       sorted(naming_cols, key=lambda x: x[1])]
         d['name'] = [{
             'name':
-            '-'.join([list(d[field][0].values())[0] for field in naming_cols])
+                '-'.join(
+                    [list(d[field][0].values())[0] for field in naming_cols])
         }]
     return d
 
@@ -396,7 +423,8 @@ def tree_dict_to_json(tree_dict):
     return res
 
 
-def gen_booking_xl_sheet_file(con, root, row_id='', index_col=None, index_value=None, **kwargs):
+def gen_booking_xl_sheet_file(con, root, row_id='', index_col=None,
+                              index_value=None, **kwargs):
     timestamp = dt.now().strftime("%Y%m%d_%H%M%S_%f")
     dtree = DataTree(root=root, con=con, tables=TABLES)
     if row_id != "":
@@ -435,7 +463,9 @@ def migrate_from_xlsx(folder, schema_tags=None):
     if schema_tags is None:
         schema_tags = get_schema_tags()
 
-    cst_pki = get_cst_pki(con=con, schemas=[get_schema(schema_tag) for schema_tag in schema_tags])
+    cst_pki = get_cst_pki(con=con,
+                          schemas=[get_schema(schema_tag) for schema_tag in
+                                   schema_tags])
     booking_sequence = get_booking_sequence(cst_pki=cst_pki)
 
     for schema_tag in schema_tags:
@@ -449,41 +479,45 @@ def migrate_from_xlsx(folder, schema_tags=None):
     con.close()
 
 
-def stash(con, root, stash_uuid, relevant_data_set, comment, **kwargs):
+def stash(jo):
+    submit_values = jo['submitValues']
+    root = jo['root']
+    stash_uuid = jo['stashUuid']
+    stash_comment = jo['stashComment']
 
-    relevant_data_set = to_json_str(relevant_data_set)
-
-    is_exist = check_unique(
-        con=con,
-        table_name='stash',
-        col_name='stash_uuid',
-        value=stash_uuid
+    is_exist = stash_uuid is not None and not check_unique(
+        {
+            'dirTableName': 'stash',
+            'colName': 'stash_uuid',
+            'value': stash_uuid
+        }
     )
-
+    con = get_con('data')
     if not is_exist:
-        sql = ('INSERT INTO stash (stash_uuid, root, relevant_data_set, comment) '
-               'VALUES (:stash_uuid, :root, :relevant_data_set, :comment)')
-        result = con.execute(
-            text(sql),
-            {
-                'root': root,
-                'stash_uuid': stash_uuid,
-                'relevant_data_set': relevant_data_set,
-                'comment': comment,
-            }
-        )
-        stash_uuid = result.lastrowid
-    else:
-        sql = ('UPDATE stash SET '
-               'root = :root, relevant_data_set = :relevant_data_set, comment = :comment '
-               'WHERE stash_uuid = :stash_uuid')
+        if stash_uuid is None:
+            stash_uuid = gen_uuid()
+        sql = ('INSERT INTO stash (`stash_uuid`, `root`, `values`, `comment`) '
+               'VALUES (:stash_uuid, :root, :values, :comment)')
         con.execute(
             text(sql),
             {
                 'root': root,
                 'stash_uuid': stash_uuid,
-                'relevant_data_set': relevant_data_set,
-                'comment': comment,
+                'values': to_json_str(submit_values, indent=0),
+                'comment': stash_comment,
+            }
+        )
+    else:
+        sql = ('UPDATE stash SET '
+               '`root` = :root, `values` = :values, `comment` = :comment '
+               'WHERE `stash_uuid` = :stash_uuid')
+        con.execute(
+            text(sql),
+            {
+                'root': root,
+                'stash_uuid': stash_uuid,
+                'values': to_json_str(submit_values, indent=0),
+                'comment': stash_comment,
             }
         )
 
@@ -491,7 +525,6 @@ def stash(con, root, stash_uuid, relevant_data_set, comment, **kwargs):
 
 
 def get_stash_list(con, **kwargs):
-
     table = TABLES['stash']
 
     col_names = [
@@ -500,8 +533,10 @@ def get_stash_list(con, **kwargs):
         'root',
         'comment'
     ]
-    header_labels = [col.label for col in table.cols if col.col_name in col_names]
-    data_types = [col.data_type for col in table.cols if col.col_name in col_names]
+    header_labels = [col.label for col in table.cols if
+                     col.col_name in col_names]
+    data_types = [col.data_type for col in table.cols if
+                  col.col_name in col_names]
 
     sql = 'SELECT * FROM stash'
     df = pd.read_sql(sql, con=con).sort_values('id', ascending=False)[col_names]
@@ -522,8 +557,45 @@ def get_select_options(con, table_name, col_name, **kwargs):
     return res
 
 
-def check_unique(con, table_name, col_name, value, **kwargs):
-    sql = 'SELECT * FROM {} WHERE {} = :value'.format(table_name, col_name)
-    result = con.execute(text(sql), {'value': value})
+def check_unique(jo):
+    col_name = jo['colName']
+    dir_table_name = jo['dirTableName']
+    value = jo['value']
+    row_id = jo.get('rowId', None)
 
+    con = get_con('data')
+    if row_id is None:
+        sql = 'SELECT * FROM {} WHERE {} = :value'.format(dir_table_name,
+                                                          col_name)
+        result = con.execute(text(sql), {'value': value})
+
+    else:
+        sql = 'SELECT * FROM {} WHERE {} = :value and id <> :row_id'.format(
+            dir_table_name,
+            col_name,
+        )
+        result = con.execute(text(sql), {'value': value, 'row_id': row_id})
+    con.close()
     return result.rowcount == 0
+
+
+def export_table_to_excel(jo):
+    rows = jo['rows']
+    try:
+        headers = jo['headers']
+    except KeyError:
+        if len(rows) == 0:
+            raise TypeError('No data to export')
+
+        headers = rows[0].keys()
+    df = pd.DataFrame(rows)
+    print(df)
+    df = df[[header['key'] for header in headers]]
+    df.columns = [header['label'] for header in headers]
+    # 精确到毫秒命名文件名
+    file_name = dt.now().strftime('%Y-%m-%d-%H-%M-%S-%f') + '.xlsx'
+    file_path = os.path.join(PATH_OUTPUT, file_name)
+    df.to_excel(file_path, index=False)
+    return {
+        'filePath': file_path
+    }

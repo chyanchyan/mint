@@ -41,6 +41,7 @@ def db_get_url(**db_params):
     host = db_params['db_host']
     port = db_params['db_port']
     schema = db_params['schema']
+    auto_commit = db_params['auto_commit']
 
     try:
         charset = db_params['db_charset']
@@ -49,7 +50,7 @@ def db_get_url(**db_params):
 
     return str(
         f'{db_type}://{username}:{password}@{host}:{port}/'
-        f'{schema}?charset={charset}&autocommit=true'
+        f'{schema}?charset={charset}{auto_commit and "&autocommit=true" or ""}'
     )
 
 
@@ -58,7 +59,7 @@ def db_get_engine(**db_params):
     return create_engine(url=url, pool_recycle=1800, pool_pre_ping=True)
 
 
-def db_connect_db(create_if_not_exist=True, **db_params):
+def db_connect_db(create_if_not_exist=True, auto_commit=True, **db_params):
     username = db_params['db_username']
     password = db_params['db_password']
     host = db_params['db_host']
@@ -70,8 +71,8 @@ def db_connect_db(create_if_not_exist=True, **db_params):
     except KeyError:
         charset = 'utf8'
 
-    url = db_get_url(**db_params)
-    engine = db_get_engine(**db_params)
+    url = db_get_url(**db_params, auto_commit=auto_commit)
+    engine = db_get_engine(**db_params, auto_commit=auto_commit)
 
     try:
         con = engine.connect()

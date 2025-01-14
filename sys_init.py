@@ -24,17 +24,11 @@ def get_schema(schema_tag):
     return res
 
 
-def get_con(schema_tag=None):
-    if schema_tag is None:
-        return db_connect_db(
-            **DB_PARAMS,
-            schema=''
-        )[1]
-    else:
-        return db_connect_db(
-            **DB_PARAMS,
-            schema=get_schema(schema_tag=schema_tag)
-        )[1]
+def get_con(schema_tag=None, auto_commit=True):
+    return get_engine_con_url(schema_tag=schema_tag, auto_commit=auto_commit)[1]
+
+def get_engine(schema_tag=None, auto_commit=True):
+    return get_engine_con_url(schema_tag=schema_tag, auto_commit=auto_commit)[0]
 
 
 def get_fg_data_con():
@@ -53,16 +47,18 @@ def get_fg_data_con():
     return con
 
 
-def get_engine_con_url(schema_tag=None):
+def get_engine_con_url(schema_tag=None, auto_commit=True):
     if schema_tag is None:
         return db_connect_db(
             **DB_PARAMS,
-            schema=''
+            schema='',
+            auto_commit=auto_commit
         )
     else:
         return db_connect_db(
             **DB_PARAMS,
-            schema=get_schema(schema_tag=schema_tag)
+            schema=get_schema(schema_tag=schema_tag),
+            auto_commit=auto_commit
         )
 
 

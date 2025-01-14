@@ -80,9 +80,7 @@ def api_hello():
 @api_status_wrapper
 def api_get_get_right_angle_trees():
     jo = get_in_json_obj(req=request)
-    con = get_con('data')
-    res = get_right_angle_trees(con=con, **jo)
-    con.close()
+    res = get_right_angle_trees(jo=jo)
     return res
 
 
@@ -100,9 +98,14 @@ def api_get_select_options():
 @api_status_wrapper
 def api_check_unique():
     jo = get_in_json_obj(req=request)
-    con = get_con('data')
-    res = check_unique(con, **jo)
-    con.close()
+    res = check_unique(jo)
+    return res
+
+@app.route('/api/checkUpdate', methods=['GET', 'POST'])
+@api_status_wrapper
+def api_check_update():
+    jo = get_in_json_obj(req=request)
+    res = check_update(jo)
     return res
 
 
@@ -110,9 +113,7 @@ def api_check_unique():
 @api_status_wrapper
 def api_stash():
     jo = get_in_json_obj(req=request)
-    con = get_con('data')
-    res = stash(con, **jo)
-    con.close()
+    res = stash(jo)
     return res
 
 
@@ -142,9 +143,7 @@ def api_gen_booking_xl_sheet():
 @api_status_wrapper
 def api_create_tree():
     jo = get_in_json_obj(req=request)
-    con = get_con('data')
-    create_tree(con, **jo)
-    con.close()
+    create_tree(jo)
     return
 
 
@@ -152,9 +151,7 @@ def api_create_tree():
 @api_status_wrapper
 def api_delete_tree():
     jo = get_in_json_obj(req=request)
-    con = get_con('data')
-    res = delete_tree(con=con, **jo)
-    con.close()
+    res = delete_tree(jo=jo)
     return res
 
 
@@ -162,10 +159,25 @@ def api_delete_tree():
 @api_status_wrapper
 def api_update_tree():
     jo = get_in_json_obj(req=request)
-    con = get_con('data')
-    res = update_tree(con=con, **jo)
-    con.close()
+    res = update_tree(jo)
     return res
+
+
+@app.route('/api/getSubmitPreviewTables', methods=['GET', 'POST'])
+@api_status_wrapper
+def api_get_submit_preview_tables():
+    jo = get_in_json_obj(req=request)
+    res = get_submit_preview_tables(jo)
+    return res
+
+
+@app.route('/api/exportTableToExcel', methods=['GET', 'POST'])
+@api_status_wrapper
+def api_export_table_to_excel():
+    jo = get_in_json_obj(req=request)
+    res = export_table_to_excel(jo=jo)
+    return res
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8083, debug=True)
