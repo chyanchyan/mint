@@ -357,31 +357,40 @@ def render_booking_xl_sheet(output_path, template_path, data_tree: DataTree):
 
     dst_row = 4
     dst_col = 1
-    value_row_index = 0
 
     # fill parent tables
-    # parent_trees = data_tree.get_all_parents_with_values()
+    parent_trees = data_tree.get_all_parents_with_values()
     parents_trees_full_value = data_tree.get_all_parents_with_full_value()
 
     for parent_name, parent in parents_trees_full_value.items():
+
+        value_row_index = 0
         ws_parent_booking = wb.copy_worksheet(wb['bks_root'])
         ws_parent_booking.title = 'bks_' + parent.table.label
         parent_full_value = parents_trees_full_value[parent.root]
-        # value_row_index = fill_table(
-        #     root=root,
-        #     ws_booking=ws_parent_booking,
-        #     ws_cell_format=ws_cell_format,
-        #     cell_formats=cell_formats,
-        #     select_values=select_values,
-        #     dst_row=5,
-        #     dst_col=1,
-        #     table=parent.table,
-        #     tables=tables,
-        #     direction='horizontal',
-        #     start_value_row_index=value_row_index,
-        #     values=parent.data.reset_index().to_dict(),
-        #     show_non_display_name=False
-        # )
+
+        if parent.table.fetchable_parent == 1:
+            parent_value = parent_trees[parent.root]
+            fill_headers_when_full_value = False
+            value_row_offset_when_full_value = len(parent_value.data) + 2
+            value_row_index = fill_table(
+                root=root,
+                ws_booking=ws_parent_booking,
+                ws_cell_format=ws_cell_format,
+                cell_formats=cell_formats,
+                select_values=select_values,
+                dst_row=5,
+                dst_col=1,
+                table=parent.table,
+                tables=tables,
+                direction='horizontal',
+                start_value_row_index=0,
+                values=parent_value.data.reset_index().to_dict(),
+                show_non_display_name=False
+            )
+        else :
+            fill_headers_when_full_value = True
+            value_row_offset_when_full_value = 0
 
         fill_table(
             root=root,
@@ -394,12 +403,12 @@ def render_booking_xl_sheet(output_path, template_path, data_tree: DataTree):
             table=parent.table,
             tables=tables,
             direction='horizontal',
-            start_value_row_index=0,
+            start_value_row_index=value_row_index,
             values={parent.reffed: parent_full_value.data.reset_index().to_dict()[parent.reffed]},
             is_selected_values=True,
             show_non_display_name=False,
-            # fill_headers=False,
-            # value_row_offset=len(parent.data) + 2
+            fill_headers=fill_headers_when_full_value,
+            value_row_offset=value_row_offset_when_full_value
         )
 
         ws_parent_booking.row_dimensions[6].hidden = True
@@ -409,7 +418,8 @@ def render_booking_xl_sheet(output_path, template_path, data_tree: DataTree):
     # fill root table
     # fill table label
     table = tables[root]
-    fill_table(
+
+    value_row_index = fill_table(
         root=root,
         ws_booking=ws_booking,
         ws_cell_format=ws_cell_format,
@@ -420,6 +430,7 @@ def render_booking_xl_sheet(output_path, template_path, data_tree: DataTree):
         table=table,
         tables=tables,
         direction='vertical',
+        start_value_row_index=0,
         values=data_tree.data.to_dict(orient='list'),
         show_non_display_name=False
     )

@@ -103,7 +103,9 @@ def migrate_data_from_xl_folder(
     con.close()
 
 
-def get_cell_options(con, root, right_angle_trees, res=None):
+def get_cell_options(con, root, right_angle_trees, res=None, root_tree=None):
+    if root_tree is None:
+        root_tree = right_angle_trees[0]
     if res is None:
         res = {}
     for t in right_angle_trees:
@@ -115,13 +117,20 @@ def get_cell_options(con, root, right_angle_trees, res=None):
             ):
                 if col.web_visible == 1:
                     ref_schema, ref_table, ref_col = col.foreign_key.split('.')
+
+                    if ref_table in [
+                        root_child.root
+                        for root_child in root_tree.children
+                    ]:
+                        continue
                     options = pd.read_sql(
                         sql=f'select `{ref_col}` from `{ref_table}`',
                         con=con
                     )[ref_col].tolist()
                     res[col.foreign_key] = options
 
-        res = get_cell_options(con, root, t.children, res)
+        res = get_cell_options(con, root, t.children, res,
+                               root_tree=root_tree)
 
     return res
 
