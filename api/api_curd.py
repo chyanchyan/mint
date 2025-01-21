@@ -60,7 +60,7 @@ def create_tree(jo):
             # 1452 引用外键约束
             session.rollback()
             print('发生错误，事务已回滚 ', e)
-            error_message = str(e)
+            raise e
         finally:
             session.close()
 
@@ -310,9 +310,11 @@ def check_update(jo):
     res = None
     if value_in_db is not None and not is_equal(value_in_db[0], value):
         if value_in_db[0] is None:
-            s = ''
+            s = '[空值]'
         else:
             s = value_in_db[0]
+        if value is None:
+            value = '[空值]'
         res = '{} -> {}'.format(s, value)
     return res
 
