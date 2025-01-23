@@ -157,6 +157,9 @@ class MetaTable(JsonObj):
             self.cols = []
         else:
             table_info = table_info.replace(np.nan, None).to_dict()
+            self.class_name = None
+            self.table_name = None
+            self.comment = None
             # table attr start
 
             # table attr end

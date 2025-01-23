@@ -122,7 +122,7 @@ def refresh_db_info(con):
 
 @sub_wrapper(SYS_MODE)
 def refresh_table_obj():
-    template_pth = os.path.join(PATH_ROOT, 'meta', 'templates', 'table_objs_template.py')
+    template_pth = os.path.join(PATH_ROOT, 'meta', 'templates', 'table_objs.py')
     output_pth = os.path.join(PATH_ROOT, 'meta', 'table_objs.py')
     code = open(template_pth, 'r').readlines()
 
@@ -154,7 +154,7 @@ def refresh_table_obj():
 @sub_wrapper(SYS_MODE)
 def refresh_models():
     # load models file template
-    template_pth = os.path.join(PATH_ROOT, 'meta', 'templates', 'models_template.py')
+    template_pth = os.path.join(PATH_ROOT, 'meta', 'templates', 'models.py')
     output_pth = os.path.join(PATH_ROOT, 'meta', 'models.py')
     f = open(template_pth, encoding='utf-8', mode='r')
     rs = f.readlines()
@@ -204,8 +204,8 @@ def create_tables():
     con.close()
 
 DB_SCHEMAS_INFO, DB_TABLES_INFO, DB_COLS_INFO = refresh_table_info_to_db()
-refresh_models()
 refresh_table_obj()
+refresh_models()
 create_tables()
 TABLES = get_tables('data')
 print(f'host name: {HOST_NAME}')
