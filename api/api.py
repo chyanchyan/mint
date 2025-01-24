@@ -130,12 +130,9 @@ def api_get_stash_list():
 @api_status_wrapper
 def api_gen_booking_xl_sheet():
     jo = get_in_json_obj(req=request)
-    con = get_con('data')
     res = gen_booking_xl_sheet_file(
-        con=con,
-        **jo
+        jo=jo
     )
-    con.close()
     return res
 
 
