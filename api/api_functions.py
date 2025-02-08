@@ -426,19 +426,34 @@ def tree_dict_to_json(tree_dict):
     return res
 
 
-def gen_booking_xl_sheet_file(con, root, row_id='', index_col=None,
-                              index_value=None, **kwargs):
+def gen_booking_xl_sheet_file(jo):
+    con = get_con('data')
+    root = jo['root']
+    row_id = jo['rowId']
+    index_col = jo['indexCol']
+    index_value = jo['indexValue']
+    values = jo['values']
     timestamp = dt.now().strftime("%Y%m%d_%H%M%S_%f")
-    dtree = DataTree(root=root, con=con, tables=TABLES)
-    if row_id != "":
-        dtree.from_sql(index_col='id', index_values={row_id})
-        p_name = dtree.relevant_data_set[root]["name"].values[0]
+    if values is not None:
+        relevant_data_set = {
+            root: pd.DataFrame(vs)
+            for root, vs in values.items()
+        }
+        dtree = DataTree(root=root, con=con, tables=TABLES)
+        dtree.from_relevant_data_set(relevant_data_set)
+        p_name = values[root][0]['name']
     else:
-        if index_col is not None:
-            dtree.from_sql(index_col=index_col, index_values={index_value})
-            p_name = dtree.relevant_data_set[root][index_col].values[0]
+        dtree = DataTree(root=root, con=con, tables=TABLES)
+        con.close()
+        if row_id != "" and row_id is not None:
+            dtree.from_sql(index_col='id', index_values={row_id})
+            p_name = dtree.relevant_data_set[root]["name"].values[0]
         else:
-            p_name = '录入模板'
+            if index_col is not None:
+                dtree.from_sql(index_col=index_col, index_values={index_value})
+                p_name = dtree.relevant_data_set[root][index_col].values[0]
+            else:
+                p_name = '录入模板'
 
     template_path = os.path.join(PATH_ROOT, 'api', 'booking_xl_template.xlsm')
     output_folder = os.path.join(PATH_OUTPUT, 'booking_xl_sheet')
