@@ -598,6 +598,9 @@ def export_table_to_excel(jo):
     # 精确到毫秒命名文件名
     file_name = dt.now().strftime('%Y-%m-%d-%H-%M-%S-%f') + '.xlsx'
     file_path = os.path.join(PATH_OUTPUT, file_name)
+
+    if not os.path.exists(PATH_OUTPUT):
+        os.makedirs(PATH_OUTPUT)
     df.to_excel(file_path, index=False)
     return {
         'filePath': file_path
