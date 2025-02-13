@@ -76,7 +76,7 @@ def api_hello():
     return f'Hello, {username}'
 
 
-@app.route('/api/getRightAngleTrees', methods=['GET', 'POST'])
+@app.route('/api/getRightAngleTrees/', methods=['GET', 'POST'])
 @api_status_wrapper
 def api_get_get_right_angle_trees():
     jo = get_in_json_obj(req=request)
