@@ -363,8 +363,6 @@ def render_booking_xl_sheet(output_path, template_path, data_tree: DataTree):
     parents_trees_full_value = data_tree.get_all_parents_with_full_value()
 
     for parent_name, parent in parents_trees_full_value.items():
-        if parent.table.fetchable_parent != 1:
-            continue
         value_row_index = 0
         ws_parent_booking = wb.copy_worksheet(wb['bks_root'])
         ws_parent_booking.title = 'bks_' + parent.table.label
