@@ -444,7 +444,6 @@ def gen_booking_xl_sheet_file(jo):
         p_name = values[root][0]['name']
     else:
         dtree = DataTree(root=root, con=con, tables=TABLES)
-        con.close()
         if row_id != "" and row_id is not None:
             dtree.from_sql(index_col='id', index_values={row_id})
             p_name = dtree.relevant_data_set[root]["name"].values[0]
@@ -469,6 +468,7 @@ def gen_booking_xl_sheet_file(jo):
         data_tree=dtree,
         template_path=template_path
     )
+    con.close()
     return {
         'filePath': output_path,
         'fileName': output_filename,
