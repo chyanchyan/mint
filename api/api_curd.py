@@ -327,32 +327,21 @@ def check_update_all(prev_values, submit_values, childhood_table_names):
         table_res = []
         try:
             pdf = pd.DataFrame(prev_values[table_name])
-            # pdf = pdf[[
-            #     col.col_name for col in TABLES[table_name].cols
-            #     if col.col_name == 'id' or col.web_visible == 1
-            # ]]
         except KeyError:
             pdf = pd.DataFrame(columns=[
                 col.col_name for col in TABLES[table_name].cols
-                # if col.col_name == 'id' or col.web_visible == 1
             ])
         try:
             vdf = pd.DataFrame(submit_values[table_name])
-            # vdf = vdf[[
-            #     col.col_name for col in TABLES[table_name].cols
-            #     if col.col_name == 'id' or col.web_visible == 1
-            # ]]
         except KeyError:
             vdf = pd.DataFrame(
                 columns=[
                     col.col_name for col in TABLES[table_name].cols
-                    # if col.col_name == 'id' or col.web_visible == 1
                 ]
             )
         if len(pdf) == 0:
             pdf = pd.DataFrame(columns=[
                 col.col_name for col in TABLES[table_name].cols
-                # if col.col_name == 'id' or col.web_visible == 1
             ])
         if not 'id' in vdf.columns.tolist():
             vdf['id'] = np.nan

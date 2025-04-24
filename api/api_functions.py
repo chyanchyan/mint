@@ -5,8 +5,9 @@ from typing import Literal
 import sys
 import os
 
+import pandas as pd
 from sqlalchemy.exc import OperationalError
-
+from mint.settings import *
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
 
@@ -56,6 +57,9 @@ def migration_pandas(con, data_path, schema, if_exists):
                             f'更新为：{r[col]} \n')
                         print('*' * 50)
                         data_to_db.loc[i, col.strip('dv_')] = r[col]
+
+        if name == 'inst':
+            data_to_db = data_to_db[[col for col in data_to_db.columns.tolist() if col != 'id']]
 
         data_to_db.to_sql(
             name=name,
