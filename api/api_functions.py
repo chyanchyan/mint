@@ -150,7 +150,7 @@ def get_right_angle_trees(jo):
         dtree = DataTree(tree=tree)
         dtree.from_excel_booking_sheet(dfs=dfs)
         values = {
-            k: df.reset_index().to_dict(orient='records')
+            k: df.reset_index().replace(np.nan, None).to_dict(orient='records')
             for k, df in dtree.relevant_data_set.items()
         }
     else:
@@ -168,7 +168,7 @@ def get_right_angle_trees(jo):
             }
 
             values = {
-                k: df.reset_index().to_dict(orient='records')
+                k: df.reset_index().replace(np.nan, None).to_dict(orient='records')
                 for k, df in dfs.items()
                 if k in [root] + [
                     child.root for child in
@@ -192,7 +192,7 @@ def get_right_angle_trees(jo):
                     print(stash_uuid, values_str)
                     ds = to_json_obj(values_str)
                     values = {
-                        k: pd.DataFrame(d).reset_index()[[
+                        k: pd.DataFrame(d).reset_index().replace(np.nan, None)[[
                             col.col_name for col in TABLES[k].cols if
                             col.web_visible == 1
                         ]].to_dict(
