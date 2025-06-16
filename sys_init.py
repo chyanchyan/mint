@@ -203,10 +203,12 @@ def create_tables():
     print("tables created")
     con.close()
 
-DB_SCHEMAS_INFO, DB_TABLES_INFO, DB_COLS_INFO = refresh_table_info_to_db()
-refresh_table_obj()
-refresh_models()
-create_tables()
+print(__name__)
+if __name__ == 'api.py':
+    DB_SCHEMAS_INFO, DB_TABLES_INFO, DB_COLS_INFO = refresh_table_info_to_db()
+    refresh_table_obj()
+    refresh_models()
+    create_tables()
 TABLES = get_tables('data')
 print(f'host name: {HOST_NAME}')
 
