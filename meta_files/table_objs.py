@@ -1,16 +1,20 @@
 import re
+import sys
+import os
+import pandas as pd
+import numpy as np
 import pandas as pd
 
-if 'mint' in __name__.split('.'):
-    from ..sys_init import DB_SCHEMAS
-    from ..helper_function.hf_number import is_number
-    from ..helper_function.hf_data import JsonObj
-    from ..helper_function.hf_string import dash_name_to_camel
-else:
-    from mint.sys_init import DB_SCHEMAS
-    from mint.helper_function.hf_number import is_number
-    from mint.helper_function.hf_data import JsonObj
-    from mint.helper_function.hf_string import dash_name_to_camel
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
+
+if parent_dir not in sys.path:
+    sys.path.append(parent_dir)
+
+
+from mint.helper_function.hf_number import is_number
+from mint.helper_function.hf_data import JsonObj
+from mint.helper_function.hf_string import dash_name_to_camel
 
 
 js_data_type_map = {
