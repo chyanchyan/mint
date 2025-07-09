@@ -1,3 +1,8 @@
+"""
+当前文件为table_objs.py的模板，每次会根据table_info.xlsx和meta_file下的这个模板
+生成meta文件夹下的table_objs.py文件
+"""
+
 import re
 import sys
 import os
@@ -28,6 +33,7 @@ js_data_type_map = {
 class MetaColumn(JsonObj):
     def __init__(self, table_info: pd.Series, col_info: pd.Series, order):
         super(MetaColumn, self).__init__()
+        # 下面这行是个定位注释，勿删改
         # col attr start
         self.table_name = col_info['table_name']
         self.col_name = col_info['col_name']
@@ -56,6 +62,7 @@ class MetaColumn(JsonObj):
         self.web_list_order = col_info['web_list_order']
         self.comment = col_info['comment']
         # col attr end
+        # 上面这行是个定位注释，勿删改
 
         self.order = order
         self.table_info = table_info

@@ -10,7 +10,7 @@ else:
 
 Base = declarative_base()
 
-
+# 下面这行是个定位注释，勿删改
 # table class start
 class Id:
     def __init__(self, *args, **kwargs):
@@ -1042,3 +1042,4 @@ class DashboardWidgetOptions(Base, Id):
 
 
 # table class end
+# 上面这行是个定位注释，勿删改

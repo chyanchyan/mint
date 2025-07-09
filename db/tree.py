@@ -1,3 +1,17 @@
+"""
+数据库树形结构处理模块
+
+该模块提供了用于处理数据库表之间关系的数据结构，支持：
+1. 表之间的父子关系管理
+2. 数据的层级查询和操作
+3. 数据的导入导出（SQL、Excel）
+4. JSON序列化
+
+主要类：
+- Tree: 基础树形结构类，处理表关系
+- DataTree: 带数据的树形结构类，继承自Tree
+"""
+
 import pandas as pd
 from pandas import ExcelWriter
 from openpyxl import Workbook
@@ -5,12 +19,14 @@ from copy import copy
 import os
 import sys
 
+# 添加父目录到系统路径，以便导入mint模块
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
 
 if parent_dir not in sys.path:
     sys.path.append(parent_dir)
 
+# 导入辅助函数
 from mint.helper_function.hf_xl import fit_col_width
 from mint.helper_function.hf_func import *
 from mint.helper_function.hf_array import get_crop_from_df
@@ -19,6 +35,16 @@ from mint.helper_function.hf_data import *
 
 # @profile_line_by_line
 def get_cst_pki(con, schemas):
+    """
+    获取数据库约束信息
+    
+    Args:
+        con: 数据库连接对象
+        schemas: 数据库模式列表
+    
+    Returns:
+        pandas.DataFrame: 包含约束信息的DataFrame
+    """
     in_str = ', '.join([f'"{schema}"' for schema in schemas])
     stmt = (
         "select * from information_schema.KEY_COLUMN_USAGE "
@@ -31,6 +57,16 @@ def get_cst_pki(con, schemas):
 
 # @profile_line_by_line
 def get_booking_sequence(cst_pki, root_nodes=None):
+    """
+    获取表的录入顺序（拓扑排序）
+    
+    Args:
+        cst_pki: 约束信息DataFrame
+        root_nodes: 根节点列表，如果指定则只处理相关表
+    
+    Returns:
+        list: 表的录入顺序
+    """
     relation_info = cst_pki[['TABLE_NAME', 'REFERENCED_TABLE_NAME']].values.tolist()
     if root_nodes is not None:
         related_tables = set()
@@ -52,6 +88,13 @@ def get_booking_sequence(cst_pki, root_nodes=None):
 
 
 class Tree(JsonObj):
+    """
+    基础树形结构类
+    
+    用于表示数据库表之间的层级关系，支持父子关系的管理
+    和拓扑排序等功能。
+    """
+    
     def __init__(
             self,
             con,
@@ -63,7 +106,21 @@ class Tree(JsonObj):
             is_parent=False,
             parent_root=None,
     ):
+        """
+        初始化树形结构
+        
+        Args:
+            con: 数据库连接对象
+            tables: 表对象字典
+            tree: 现有树对象（用于复制）
+            root: 根表名
+            ref: 引用列名
+            reffed: 被引用列名
+            is_parent: 是否为父节点
+            parent_root: 父根节点名
+        """
         if tree:
+            # 如果提供了现有树对象，直接复制其属性
             self.con = tree.con
             self.root = tree.root
             self.ref = tree.ref
@@ -77,6 +134,7 @@ class Tree(JsonObj):
             self.reading_sequence = tree.reading_sequence
             return
 
+        # 初始化基本属性
         self.con = con
         self.root = root
         self.schemas = list(set([table.schema for table in tables.values()]))
@@ -89,6 +147,7 @@ class Tree(JsonObj):
 
         JsonObj.__init__(self)
 
+        # 处理父节点关系
         ref_cols = [
             col for col in self.table.cols if not pd.isna(col.foreign_key)
         ]
@@ -111,6 +170,7 @@ class Tree(JsonObj):
             )
             self.parents.append(parent)
 
+        # 处理子节点关系
         if not is_parent:
             reffed_table_and_cols = []
             for child_root, table_obj in tables.items():
@@ -132,9 +192,11 @@ class Tree(JsonObj):
                 )
                 self.children.append(child)
 
+        # 按表顺序排序父节点和子节点
         self.parents.sort(key=lambda x: self.tables[x.root].order)
         self.children.sort(key=lambda x: self.tables[x.root].order)
 
+        # 生成录入顺序和读取序列
         self.booking_sequence = self.get_booking_sequence()
         self.reading_sequence = [item for item in self.booking_sequence.__reversed__()]
 
@@ -142,27 +204,39 @@ class Tree(JsonObj):
         # self.sort_cols()
 
     def __bool__(self):
+        """判断树是否有效"""
         if self.root:
             return True
         else:
             return False
 
     def __gt__(self, other):
+        """判断当前节点是否为其他节点的祖先"""
         return self.root in [p for p in other.all_parenthood_names()]
 
     def __lt__(self, other):
+        """判断当前节点是否为其他节点的后代"""
         return self.root in [c for c in other.all_childhood_names()]
 
     def __ge__(self, other):
+        """判断当前节点是否为其他节点的祖先或等于其他节点"""
         return self.root in [p for p in other.all_parenthood_names()] or self.root == other.root
 
     def __le__(self, other):
+        """判断当前节点是否为其他节点的后代或等于其他节点"""
         return self.root in [c for c in other.all_childhood_names()] or self.root == other.root
 
     def __eq__(self, other):
+        """判断两个节点是否相等"""
         return self.root == other.root
 
     def get_booking_sequence(self):
+        """
+        获取录入顺序（拓扑排序）
+        
+        Returns:
+            list: 包含所有相关表的录入顺序
+        """
         res = sum([
             p.get_booking_sequence() for p in self.parents
         ], start=[]) + [
@@ -174,6 +248,12 @@ class Tree(JsonObj):
         return [item for i, item in enumerate(res) if item not in res[:i]]
 
     def all_parenthood_names(self):
+        """
+        获取所有祖先节点名称
+        
+        Returns:
+            set: 祖先节点名称集合
+        """
         res = set([p.root for p in self.parents])
         for p in self.parents:
             res |= p.all_parenthood_names()
@@ -182,12 +262,27 @@ class Tree(JsonObj):
         return res
 
     def all_childhood_names(self):
+        """
+        获取所有后代节点名称
+        
+        Returns:
+            set: 后代节点名称集合
+        """
         res = set([c.root for c in self.children])
         for c in self.children:
             res |= c.all_childhood_names()
         return res
 
     def get_child_path(self, child_root: str):
+        """
+        获取到指定子节点的路径
+        
+        Args:
+            child_root: 子节点名称
+            
+        Returns:
+            list: 从当前节点到子节点的路径
+        """
         res = []
         for c in self.children:
             if c.root == child_root:
@@ -200,6 +295,12 @@ class Tree(JsonObj):
         return res
 
     def json_obj_base(self):
+        """
+        获取基础JSON对象表示
+        
+        Returns:
+            dict: 树的JSON表示
+        """
         json_obj = self.to_json_obj_raw(
             include_attrs=['root', 'ref', 'reffed', 'parents', 'children']
         )
@@ -214,9 +315,20 @@ class Tree(JsonObj):
 
     @property
     def json_obj(self):
+        """获取JSON对象表示"""
         return self.json_obj_base()
 
     def p_(self, p_name, ref=None):
+        """
+        获取指定父节点
+        
+        Args:
+            p_name: 父节点名称
+            ref: 引用列名（可选）
+            
+        Returns:
+            Tree: 父节点对象，如果不存在则返回None
+        """
         if not ref:
             return next(
                 (
@@ -233,6 +345,16 @@ class Tree(JsonObj):
             )
 
     def c_(self, c_name, reffed=None):
+        """
+        获取指定子节点
+        
+        Args:
+            c_name: 子节点名称
+            reffed: 被引用列名（可选）
+            
+        Returns:
+            Tree: 子节点对象，如果不存在则返回None
+        """
         if not reffed:
             return next(
                 (
@@ -250,13 +372,24 @@ class Tree(JsonObj):
 
     @property
     def p(self):
+        """父节点属性索引器"""
         return PropertyIndexer(self, 'p_')
 
     @property
     def c(self):
+        """子节点属性索引器"""
         return PropertyIndexer(self, 'c_')
 
     def get_all_nodes(self, res=None):
+        """
+        获取所有节点
+        
+        Args:
+            res: 结果字典（递归使用）
+            
+        Returns:
+            dict: 所有节点的字典，键为节点名，值为节点对象
+        """
         if not res:
             res = {self.root: self}
         for p in self.parents:
@@ -270,6 +403,15 @@ class Tree(JsonObj):
         return res
 
     def get_all_parents(self, res=None):
+        """
+        获取所有父节点
+        
+        Args:
+            res: 结果字典（递归使用）
+            
+        Returns:
+            dict: 所有父节点的字典
+        """
         if not res:
             res = {}
         for p in self.parents:
@@ -281,6 +423,12 @@ class Tree(JsonObj):
         return res
 
     def get_node_names(self):
+        """
+        获取所有节点名称
+        
+        Returns:
+            set: 节点名称集合
+        """
         res = {self.root}
         for parent in self.parents:
             res |= parent.node_names
@@ -289,11 +437,23 @@ class Tree(JsonObj):
         return res
 
     def get_parent_tree_structure(self):
+        """
+        获取父树结构
+        
+        Returns:
+            dict: 父树结构字典
+        """
         res = {p.root: p.get_parent_tree_structure() for p in self.parents}
         return res
 
 
 class DataTree(Tree):
+    """
+    带数据的树形结构类
+    
+    继承自Tree类，增加了数据操作功能，支持数据的查询、导入、导出等操作。
+    """
+    
     def __init__(
             self,
             con=None,
@@ -304,6 +464,18 @@ class DataTree(Tree):
             reffed=None,
             relevant_data_set=None,
     ):
+        """
+        初始化数据树
+        
+        Args:
+            con: 数据库连接对象
+            tables: 表对象字典
+            tree: 现有树对象
+            root: 根表名
+            ref: 引用列名
+            reffed: 被引用列名
+            relevant_data_set: 相关数据集
+        """
         if con is None:
             if tree is None:
                 print('con and tree cannot be None at the same time')
@@ -328,6 +500,7 @@ class DataTree(Tree):
             reffed=reffed,
         )
 
+        # 初始化数据
         if relevant_data_set is None:
             relevant_data_set = dict(zip(
                 self.node_names,
@@ -341,23 +514,34 @@ class DataTree(Tree):
         self.relevant_data_set = relevant_data_set
 
     def __len__(self):
+        """返回数据行数"""
         return len(self.data)
 
     def __getitem__(self, key):
+        """获取数据列"""
         return self.data[key]
 
     @property
     def loc(self):
+        """DataFrame的loc访问器"""
         return self.data.loc
 
     @property
     def iloc(self):
+        """DataFrame的iloc访问器"""
         return self.data.iloc
 
     def iterrows(self):
+        """迭代数据行"""
         return self.data.iterrows()
 
     def itertrees(self):
+        """
+        迭代树结构
+        
+        Yields:
+            tuple: (索引, DataTree对象)
+        """
         for i, row in self.iterrows():
             relevant_data_set = deepcopy(self.relevant_data_set)
             relevant_data_set[self.root] = row.to_frame().transpose()
@@ -372,6 +556,17 @@ class DataTree(Tree):
 
     @staticmethod
     def update_values_map(values_map, tree, root_data):
+        """
+        更新值映射
+        
+        Args:
+            values_map: 值映射字典
+            tree: 树对象
+            root_data: 根数据
+            
+        Returns:
+            dict: 更新后的值映射
+        """
         for p in tree.parents:
             if len(root_data) == 0:
                 adding_data = set()
@@ -411,6 +606,7 @@ class DataTree(Tree):
         return values_map
 
     def fill_na_with_none(self):
+        """将NaN值替换为None"""
         relevant_data_set_copy = deepcopy(self.relevant_data_set)
         for name, df in relevant_data_set_copy.items():
             df = df.fillna(np.nan).replace([np.nan], [None])
@@ -423,7 +619,16 @@ class DataTree(Tree):
             limit=None,
             offset=None
     ):
-        # root data
+        """
+        从SQL查询加载数据
+        
+        Args:
+            index_col: 索引列名
+            index_values: 索引值集合
+            limit: 限制行数
+            offset: 偏移量
+        """
+        # 查询根数据
         root_schema = self.table.schema
         if index_col is None and index_values is None:
             where_str = ''
@@ -465,7 +670,7 @@ class DataTree(Tree):
                 root_data=root_data
             )
 
-            # relevant data
+            # 查询相关数据
             reading_seq = list(self.reading_sequence)
             reading_seq.remove(self.root)
 
@@ -476,7 +681,7 @@ class DataTree(Tree):
                 for col, tree_values in values_map[node_name].items():
                     values = tree_values['values']
 
-                    # has no value by col
+                    # 该列没有值
                     if len(values) == 0:
                         continue
 
@@ -484,7 +689,7 @@ class DataTree(Tree):
                     where_str = f'(`{col}` in ({values_str}))'
                     where_str_list.append(where_str)
 
-                # has no value in table
+                # 该表没有值
                 if len(where_str_list) == 0:
                     continue
 
@@ -507,7 +712,7 @@ class DataTree(Tree):
                     for col, tree_values in values_map[node_name].items():
                         values = tree_values['values']
 
-                        # has no value by col
+                        # 该列没有值
                         if len(values) == 0:
                             continue
 
@@ -515,7 +720,7 @@ class DataTree(Tree):
                         where_str = f'(`{col}` in ({values_str}))'
                         where_str_list.append(where_str)
 
-                    # has no value in table
+                    # 该表没有值
                     if len(where_str_list) == 0:
                         continue
                     all_where_str = ' or '.join(where_str_list)
@@ -528,6 +733,12 @@ class DataTree(Tree):
         self.relevant_data_set = relevant_data_set
 
     def from_relevant_data_set(self, relevant_data_set=None):
+        """
+        从相关数据集加载数据
+        
+        Args:
+            relevant_data_set: 相关数据集字典
+        """
         relevant_data_set_copy = copy(relevant_data_set)
 
         if relevant_data_set_copy is None:
@@ -555,7 +766,7 @@ class DataTree(Tree):
                 root_data=root_data
             )
 
-            # relevant data
+            # 处理相关数据
             for node_name in self.reading_sequence:
                 if node_name not in relevant_data_set_copy:
                     relevant_data_set_copy[node_name] = pd.DataFrame(
@@ -601,6 +812,13 @@ class DataTree(Tree):
         ]
     )
     def to_sql(self, curd, if_data_exists='fail'):
+        """
+        将数据保存到SQL数据库
+        
+        Args:
+            curd: CRUD操作对象
+            if_data_exists: 数据存在时的处理策略
+        """
         stmt = curd.stmt_df_merge(
             datatree=self,
             if_data_exists=if_data_exists,
@@ -609,6 +827,16 @@ class DataTree(Tree):
         # con.cursor.execute(stmt)
 
     def p_(self, p_name, ref=None):
+        """
+        获取指定父节点（带数据）
+        
+        Args:
+            p_name: 父节点名称
+            ref: 引用列名（可选）
+            
+        Returns:
+            DataTree: 父节点数据树对象
+        """
         p_tree = Tree.p_(self, p_name=p_name, ref=ref)
         p = DataTree(
             con=self.con,
@@ -619,6 +847,16 @@ class DataTree(Tree):
         return p
 
     def c_(self, c_name, reffed=None):
+        """
+        获取指定子节点（带数据）
+        
+        Args:
+            c_name: 子节点名称
+            reffed: 被引用列名（可选）
+            
+        Returns:
+            DataTree: 子节点数据树对象
+        """
         c = DataTree(
             con=self.con,
             tables=self.tables,
@@ -629,14 +867,22 @@ class DataTree(Tree):
 
     @property
     def p(self):
+        """父节点属性索引器（带数据）"""
         return PropertyIndexer(self, 'p_')
 
     @property
     def c(self):
+        """子节点属性索引器（带数据）"""
         return PropertyIndexer(self, 'c_')
 
     @property
     def ps(self):
+        """
+        父节点生成器
+        
+        Yields:
+            DataTree: 父节点数据树对象
+        """
         for parent in self.parents:
             p = DataTree(
                 con=self.con,
@@ -648,6 +894,12 @@ class DataTree(Tree):
 
     @property
     def cs(self):
+        """
+        子节点生成器
+        
+        Yields:
+            DataTree: 子节点数据树对象
+        """
         for child in self.children:
             c = DataTree(
                 con=self.con,
@@ -658,6 +910,16 @@ class DataTree(Tree):
             yield c
 
     def json_obj_base(self, with_value=False, with_table=True):
+        """
+        获取基础JSON对象表示（带数据）
+        
+        Args:
+            with_value: 是否包含数据值
+            with_table: 是否包含表信息
+            
+        Returns:
+            dict: 数据树的JSON表示
+        """
         json_obj = self.to_json_obj_raw(
             include_attrs=['root', 'ref', 'reffed', 'parents', 'children']
         )
@@ -680,13 +942,35 @@ class DataTree(Tree):
 
     @property
     def json_obj(self):
+        """获取完整JSON对象表示"""
         return self.json_obj_base(with_value=True, with_table=True)
 
     def json_obj_func(self, with_value=True, with_table=True):
+        """
+        获取JSON对象表示（可配置）
+        
+        Args:
+            with_value: 是否包含数据值
+            with_table: 是否包含表信息
+            
+        Returns:
+            dict: 数据树的JSON表示
+        """
         return self.json_obj_base(with_value=with_value, with_table=with_table)
 
     # @profile_line_by_line
     def nested_values(self, ref_group=None, ignore_ref_col=None, full_detail=False):
+        """
+        获取嵌套值结构
+        
+        Args:
+            ref_group: 引用分组
+            ignore_ref_col: 忽略的引用列
+            full_detail: 是否包含完整详情
+            
+        Returns:
+            dict: 嵌套值结构
+        """
         if full_detail:
             col_items = [
                 item for item in self.table.cols
@@ -747,6 +1031,16 @@ class DataTree(Tree):
 
     # @profile_line_by_line
     def nested_values2(self, data=None, parent_ref=None):
+        """
+        获取嵌套值结构（版本2）
+        
+        Args:
+            data: 数据DataFrame
+            parent_ref: 父引用列
+            
+        Returns:
+            dict: 嵌套值结构
+        """
         if not isinstance(data, pd.DataFrame):
             data = self.data
         col_items = [
@@ -804,6 +1098,15 @@ class DataTree(Tree):
         return res
 
     def get_all_parents_with_values(self, res=None):
+        """
+        获取所有带值的父节点
+        
+        Args:
+            res: 结果字典（递归使用）
+            
+        Returns:
+            dict: 所有带值的父节点字典
+        """
         if res is None:
             res = {}
         for dp in self.ps:
@@ -820,6 +1123,12 @@ class DataTree(Tree):
 
 
     def get_all_parents_with_full_value(self):
+        """
+        获取所有带完整值的父节点
+        
+        Returns:
+            dict: 所有带完整值的父节点字典
+        """
         res = {}
         all_parents = self.get_all_parents()
         for p_name, p in all_parents.items():
@@ -833,6 +1142,12 @@ class DataTree(Tree):
         return res
 
     def get_parents_select_values(self):
+        """
+        获取父节点的选择值
+        
+        Returns:
+            dict: 父节点选择值字典
+        """
         res = {}
         all_parents = self.get_all_parents_with_full_value()
         for p_name, p in all_parents.items():
@@ -847,6 +1162,12 @@ class DataTree(Tree):
         return res
 
     def from_excel_booking_sheet(self, dfs):
+        """
+        从Excel预订表加载数据
+        
+        Args:
+            dfs: Excel工作表字典
+        """
         relevant_data_set = {}
         root_sheet_name = f'bks_{self.table.label}'
         root_df_raw = dfs[root_sheet_name]
@@ -861,6 +1182,7 @@ class DataTree(Tree):
 
         relevant_data_set[self.root] = root_df
 
+        # 处理子节点数据
         for child in self.children:
             try:
                 anchor_x = root_df_raw.iloc[:, 2].to_list().index(child.root) + 4
@@ -875,10 +1197,10 @@ class DataTree(Tree):
                 col_offset=-2,
                 pk_index=-3
             )
-            # mark child ref
+            # 标记子节点引用
             child_df[child.ref] = root_df[child.reffed].values[0]
 
-            # mark child auto-name
+            # 标记子节点自动命名
             naming_cols = sorted([
                 col_obj for col_obj in child.table.cols
                 if not pd.isna(col_obj.naming_field_order)
@@ -893,6 +1215,7 @@ class DataTree(Tree):
 
             relevant_data_set[child.root] = child_df
 
+        # 处理父节点数据
         for parent_root, parent in self.get_all_parents().items():
             parent_sheet_name = f'bks_{parent.table.label}'
             try:
@@ -909,7 +1232,7 @@ class DataTree(Tree):
                 pk_index=-3
             )
 
-            # mark auto name
+            # 标记自动命名
             naming_cols = [
                 (col.col_name, col.naming_field_order)
                 for col in parent.table.cols
@@ -933,12 +1256,23 @@ class DataTree(Tree):
 
             relevant_data_set[parent_root] = parent_df
 
+        # 处理空值
         for key, df in relevant_data_set.items():
             relevant_data_set[key] = df.where(df.notnull(), None)
 
         self.from_relevant_data_set(relevant_data_set=relevant_data_set)
 
     def to_excel_sheets(self, pth, node_names=None, web_visible_only=False, label=False, table_label=False):
+        """
+        将数据导出到Excel工作表
+        
+        Args:
+            pth: 文件路径
+            node_names: 节点名称列表
+            web_visible_only: 是否只导出web可见列
+            label: 是否使用标签名
+            table_label: 是否使用表标签
+        """
         writer = ExcelWriter(pth, mode='w', engine='openpyxl', options={'strings_to_urls': False})
         if not node_names:
             node_names = self.node_names
@@ -988,6 +1322,12 @@ class DataTree(Tree):
             os.remove(pth)
 
     def to_excel_detail_sheet(self, pth):
+        """
+        将数据导出到Excel详细工作表
+        
+        Args:
+            pth: 文件路径
+        """
         child_data = {}
         for child in self.children:
             child_data[child.root] = self[child.root].to_dict()
@@ -1023,6 +1363,17 @@ class DataTree(Tree):
 
 
 def get_right_angle_trees_from_tree(tree: Tree, res=None, include_root=True):
+    """
+    从树中获取直角树列表
+    
+    Args:
+        tree: 树对象
+        res: 结果列表（递归使用）
+        include_root: 是否包含根节点
+        
+    Returns:
+        list: 直角树列表
+    """
     if include_root:
         if res is None:
             res = [tree]
@@ -1043,6 +1394,16 @@ def get_right_angle_trees_from_tree(tree: Tree, res=None, include_root=True):
 
 
 def get_flattened_tree_list_from_right_angle_trees(right_angle_trees: List[Tree], res=None):
+    """
+    从直角树列表获取扁平化树列表
+    
+    Args:
+        right_angle_trees: 直角树列表
+        res: 结果列表（递归使用）
+        
+    Returns:
+        list: 扁平化树列表
+    """
     if res is None:
         res = []
     for tree in right_angle_trees:
